@@ -146,7 +146,6 @@ int HTPFileOpen(HtpState *s, const uint8_t *filename, uint16_t filename_len,
 
     FileSetTx(files->tail, txid);
 
-    FilePrune(files);
 end:
     SCReturnInt(retval);
 }
@@ -186,7 +185,7 @@ int HTPParseContentRange(bstr * rawvalue, HtpContentRange *range)
 
     if (data[pos] == '*') {
         // case with size only
-        if (len < pos + 1 || data[pos+1] != '/') {
+        if (len <= pos + 1 || data[pos+1] != '/') {
             range->size = -1;
             return -1;
         }
@@ -196,13 +195,13 @@ int HTPParseContentRange(bstr * rawvalue, HtpContentRange *range)
         // case with start and end
         range->start = bstr_util_mem_to_pint(data + pos, len - pos, 10, &last_pos);
         pos += last_pos;
-        if (len < pos + 1 || data[pos] != '-') {
+        if (len <= pos + 1 || data[pos] != '-') {
             return -1;
         }
         pos++;
         range->end = bstr_util_mem_to_pint(data + pos, len - pos, 10, &last_pos);
         pos += last_pos;
-        if (len < pos + 1 || data[pos] != '/') {
+        if (len <= pos + 1 || data[pos] != '/') {
             return -1;
         }
         pos++;
@@ -301,7 +300,6 @@ int HTPFileStoreChunk(HtpState *s, const uint8_t *data, uint32_t data_len,
         retval = -2;
     }
 
-    FilePrune(files);
 end:
     SCReturnInt(retval);
 }
@@ -353,7 +351,6 @@ int HTPFileClose(HtpState *s, const uint8_t *data, uint32_t data_len,
         retval = -2;
     }
 
-    FilePrune(files);
 end:
     SCReturnInt(retval);
 }

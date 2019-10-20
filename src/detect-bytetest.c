@@ -71,6 +71,8 @@ static void DetectBytetestRegisterTests(void);
 void DetectBytetestRegister (void)
 {
     sigmatch_table[DETECT_BYTETEST].name = "byte_test";
+    sigmatch_table[DETECT_BYTETEST].desc = "extract <num of bytes> and perform an operation selected with <operator> against the value in <test value> at a particular <offset>";
+    sigmatch_table[DETECT_BYTETEST].url = DOC_URL DOC_VERSION "/rules/payload-keywords.html#byte-test";
     sigmatch_table[DETECT_BYTETEST].Match = DetectBytetestMatch;
     sigmatch_table[DETECT_BYTETEST].Setup = DetectBytetestSetup;
     sigmatch_table[DETECT_BYTETEST].Free  = DetectBytetestFree;
@@ -93,13 +95,13 @@ void DetectBytetestRegister (void)
  */
 int DetectBytetestDoMatch(DetectEngineThreadCtx *det_ctx,
                           const Signature *s, const SigMatchCtx *ctx,
-                          uint8_t *payload, uint32_t payload_len,
+                          const uint8_t *payload, uint32_t payload_len,
                           uint8_t flags, int32_t offset, uint64_t value)
 {
     SCEnter();
 
     const DetectBytetestData *data = (const DetectBytetestData *)ctx;
-    uint8_t *ptr = NULL;
+    const uint8_t *ptr = NULL;
     int32_t len = 0;
     uint64_t val = 0;
     int extbytes;
@@ -982,7 +984,10 @@ static int DetectBytetestTestParse19(void)
 
     int result = 1;
 
-    s->alproto = ALPROTO_DCERPC;
+    if (DetectSignatureSetAppProto(s, ALPROTO_DCERPC) < 0) {
+        SigFree(s);
+        return 0;
+    }
 
     result &= (DetectBytetestSetup(NULL, s, "1,=,1,6,dce") == 0);
     result &= (DetectBytetestSetup(NULL, s, "1,=,1,6,string,dce") == -1);

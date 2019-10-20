@@ -1,4 +1,4 @@
-/* Copyright (C) 2017 Open Information Security Foundation
+/* Copyright (C) 2019 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
  * the GNU General Public License version 2 as published by the Free
@@ -15,9 +15,9 @@
  * 02110-1301, USA.
  */
 
-#ifndef __APP_LAYER_DNS_TCP_RUST_H__
-#define __APP_LAYER_DNS_TCP_RUST_H__
+#ifndef __DETECT_DNS_OPCODE_H__
+#define __DETECT_DNS_OPCODE_H__
 
-void RegisterRustDNSTCPParsers(void);
+void DetectDnsOpcodeRegister(void);
 
-#endif /* !__APP_LAYER_DNS_TCP_RUST_H__ */
+#endif /* __DETECT_DNS_OPCODE_H__ */

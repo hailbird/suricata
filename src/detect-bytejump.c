@@ -70,6 +70,8 @@ static void DetectBytejumpRegisterTests(void);
 void DetectBytejumpRegister (void)
 {
     sigmatch_table[DETECT_BYTEJUMP].name = "byte_jump";
+    sigmatch_table[DETECT_BYTEJUMP].desc = "allow the ability to select a <num of bytes> from an <offset> and move the detection pointer to that position";
+    sigmatch_table[DETECT_BYTEJUMP].url = DOC_URL DOC_VERSION "/rules/payload-keywords.html#byte-jump";
     sigmatch_table[DETECT_BYTEJUMP].Match = DetectBytejumpMatch;
     sigmatch_table[DETECT_BYTEJUMP].Setup = DetectBytejumpSetup;
     sigmatch_table[DETECT_BYTEJUMP].Free  = DetectBytejumpFree;
@@ -88,14 +90,14 @@ void DetectBytejumpRegister (void)
  *  \retval 0 no match
  */
 int DetectBytejumpDoMatch(DetectEngineThreadCtx *det_ctx, const Signature *s,
-                          const SigMatchCtx *ctx, uint8_t *payload, uint32_t payload_len,
+                          const SigMatchCtx *ctx, const uint8_t *payload, uint32_t payload_len,
                           uint8_t flags, int32_t offset)
 {
     SCEnter();
 
     const DetectBytejumpData *data = (const DetectBytejumpData *)ctx;
-    uint8_t *ptr = NULL;
-    uint8_t *jumpptr = NULL;
+    const uint8_t *ptr = NULL;
+    const uint8_t *jumpptr = NULL;
     int32_t len = 0;
     uint64_t val = 0;
     int extbytes;
@@ -186,7 +188,7 @@ int DetectBytejumpDoMatch(DetectEngineThreadCtx *det_ctx, const Signature *s,
 
 #ifdef DEBUG
     if (SCLogDebugEnabled()) {
-        uint8_t *sptr = (flags & DETECT_BYTEJUMP_BEGIN) ? payload : ptr;
+        const uint8_t *sptr = (flags & DETECT_BYTEJUMP_BEGIN) ? payload : ptr;
         SCLogDebug("jumping %" PRId64 " bytes from %p (%08x) to %p (%08x)",
                val, sptr, (int)(sptr - payload),
                jumpptr, (int)(jumpptr - payload));
@@ -203,8 +205,8 @@ static int DetectBytejumpMatch(DetectEngineThreadCtx *det_ctx,
                         Packet *p, const Signature *s, const SigMatchCtx *ctx)
 {
     const DetectBytejumpData *data = (const DetectBytejumpData *)ctx;
-    uint8_t *ptr = NULL;
-    uint8_t *jumpptr = NULL;
+    const uint8_t *ptr = NULL;
+    const uint8_t *jumpptr = NULL;
     uint16_t len = 0;
     uint64_t val = 0;
     int extbytes;
@@ -295,7 +297,7 @@ static int DetectBytejumpMatch(DetectEngineThreadCtx *det_ctx,
 
 #ifdef DEBUG
     if (SCLogDebugEnabled()) {
-        uint8_t *sptr = (data->flags & DETECT_BYTEJUMP_BEGIN) ? p->payload
+        const uint8_t *sptr = (data->flags & DETECT_BYTEJUMP_BEGIN) ? p->payload
                                                               : ptr;
         SCLogDebug("jumping %" PRId64 " bytes from %p (%08x) to %p (%08x)",
                val, sptr, (int)(sptr - p->payload),
@@ -817,7 +819,10 @@ static int DetectBytejumpTestParse09(void)
 
     int result = 1;
 
-    s->alproto = ALPROTO_DCERPC;
+    if (DetectSignatureSetAppProto(s, ALPROTO_DCERPC) < 0) {
+        SigFree(s);
+        return 0;
+    }
 
     result &= (DetectBytejumpSetup(NULL, s, "4,0, align, multiplier 2, "
                                    "post_offset -16,dce") == 0);

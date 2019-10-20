@@ -236,7 +236,6 @@
 #include <w32api/wtypes.h>
 #endif
 
-#ifdef HAVE_LIBJANSSON
 #include <jansson.h>
 #ifndef JSON_ESCAPE_SLASH
 #define JSON_ESCAPE_SLASH 0
@@ -245,7 +244,6 @@
 #ifndef json_boolean
 #define json_boolean(val)      SCJsonBool((val))
 //#define json_boolean(val)      ((val) ? json_true() : json_false())
-#endif
 #endif
 
 #ifdef HAVE_MAGIC
@@ -431,6 +429,7 @@ typedef enum {
     LOGGER_JSON_TLS,
     LOGGER_JSON_NFS,
     LOGGER_JSON_TFTP,
+    LOGGER_JSON_FTP,
     LOGGER_JSON_DNP3_TS,
     LOGGER_JSON_DNP3_TC,
     LOGGER_JSON_SSH,
@@ -439,8 +438,10 @@ typedef enum {
     LOGGER_JSON_KRB5,
     LOGGER_JSON_DHCP,
     LOGGER_JSON_SNMP,
+    LOGGER_JSON_SIP,
     LOGGER_JSON_TEMPLATE_RUST,
     LOGGER_JSON_TEMPLATE,
+    LOGGER_JSON_RDP,
 
     LOGGER_ALERT_DEBUG,
     LOGGER_ALERT_FAST,

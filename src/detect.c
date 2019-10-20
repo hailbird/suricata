@@ -130,8 +130,8 @@ static void DetectRun(ThreadVars *th_v,
     DetectRulePacketRules(th_v, de_ctx, det_ctx, p, pflow, &scratch);
     PACKET_PROFILING_DETECT_END(p, PROF_DETECT_RULES);
 
-    /* run tx/state inspection */
-    if (pflow && pflow->alstate) {
+    /* run tx/state inspection. Don't call for ICMP error msgs. */
+    if (pflow && pflow->alstate && likely(pflow->proto == p->proto)) {
         PACKET_PROFILING_DETECT_START(p, PROF_DETECT_TX);
         DetectRunTx(th_v, de_ctx, det_ctx, p, pflow, &scratch);
         PACKET_PROFILING_DETECT_END(p, PROF_DETECT_TX);
@@ -729,10 +729,8 @@ static inline void DetectRulePacketRules(
 
     SGH_PROFILING_RECORD(det_ctx, scratch->sgh);
 #ifdef PROFILING
-#ifdef HAVE_LIBJANSSON
     if (match_cnt >= de_ctx->profile_match_logging_threshold)
         RulesDumpMatchArray(det_ctx, scratch->sgh, p);
-#endif
 #endif
 
     uint32_t sflags, next_sflags = 0;
@@ -1074,6 +1072,7 @@ static bool DetectRunTxInspectRule(ThreadVars *tv,
         flow_flags &=~ STREAM_FLUSH;
 
     TRACE_SID_TXS(s->id, tx, "starting %s", direction ? "toclient" : "toserver");
+    TRACE_SID_TXS(s->id, tx, "FLUSH? %s", (flow_flags & STREAM_FLUSH)?"true":"false");
 
     /* for a new inspection we inspect pkt header and packet matches */
     if (likely(stored_flags == NULL)) {

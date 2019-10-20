@@ -59,8 +59,14 @@ int DetectEngineContentModifierBufferSetup(DetectEngineCtx *de_ctx,
         Signature *s, const char *arg, int sm_type, int sm_list,
         AppProto alproto);
 
+bool SigMatchSilentErrorEnabled(const DetectEngineCtx *de_ctx,
+        const enum DetectKeywordId id);
+bool SigMatchStrictEnabled(const enum DetectKeywordId id);
+
 const char *DetectListToHumanString(int list);
 const char *DetectListToString(int list);
+
+void SigTableApplyStrictCommandlineOption(const char *str);
 
 SigMatch *DetectGetLastSM(const Signature *);
 SigMatch *DetectGetLastSMFromMpmLists(const DetectEngineCtx *de_ctx, const Signature *s);
@@ -69,7 +75,7 @@ SigMatch *DetectGetLastSMByListPtr(const Signature *s, SigMatch *sm_list, ...);
 SigMatch *DetectGetLastSMByListId(const Signature *s, int list_id, ...);
 
 int DetectSignatureAddTransform(Signature *s, int transform);
-int DetectSignatureSetAppProto(Signature *s, AppProto alproto);
+int WARN_UNUSED DetectSignatureSetAppProto(Signature *s, AppProto alproto);
 
 /* parse regex setup and free util funcs */
 

@@ -387,7 +387,6 @@ static int JsonDnsLoggerToClient(ThreadVars *tv, void *thread_data,
     SCReturnInt(TM_ECODE_OK);
 }
 
-#define OUTPUT_BUFFER_SIZE 65536
 static TmEcode LogDnsLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     LogDnsLogThread *aft = SCMalloc(sizeof(LogDnsLogThread));
@@ -402,7 +401,7 @@ static TmEcode LogDnsLogThreadInit(ThreadVars *t, const void *initdata, void **d
         return TM_ECODE_FAILED;
     }
 
-    aft->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    aft->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (aft->buffer == NULL) {
         SCFree(aft);
         return TM_ECODE_FAILED;
@@ -511,28 +510,36 @@ static DnsVersion JsonDnsParseVersion(ConfNode *conf)
 
     DnsVersion version = DNS_VERSION_DEFAULT;
     intmax_t config_version;
-    if (ConfGetChildValueInt(conf, "version", &config_version)) {
-        switch(config_version) {
-            case 1:
-                version = DNS_VERSION_1;
-                break;
-            case 2:
-                version = DNS_VERSION_2;
-                break;
-            default:
-                SCLogWarning(SC_ERR_INVALID_ARGUMENT,
-                        "invalid eve-log dns version option: %"PRIuMAX", "
-                        "forcing it to version %u",
-                        config_version, DNS_VERSION_DEFAULT);
-                version = DNS_VERSION_DEFAULT;
-                break;
+    const ConfNode *has_version = ConfNodeLookupChild(conf, "version");
+
+    if (has_version != NULL) {
+        bool invalid = false;
+        if (ConfGetChildValueInt(conf, "version", &config_version)) {
+            switch(config_version) {
+                case 1:
+                    version = DNS_VERSION_1;
+                    break;
+                case 2:
+                    version = DNS_VERSION_2;
+                    break;
+                default:
+                    invalid = true;
+                    break;
+            }
+        } else {
+            invalid = true;
+        }
+        if (invalid) {
+            SCLogWarning(SC_ERR_INVALID_ARGUMENT,
+                    "invalid eve-log dns version option: %s, "
+                    "defaulting to version %u",
+                    has_version->val, version);
         }
     } else {
-        SCLogWarning(SC_ERR_INVALID_ARGUMENT,
-                "eve-log dns version not found, forcing it to version %u",
-                DNS_VERSION_DEFAULT);
-        version = DNS_VERSION_DEFAULT;
+        SCLogConfig("eve-log dns version not set, defaulting to version %u",
+                version);
     }
+
     return version;
 }
 

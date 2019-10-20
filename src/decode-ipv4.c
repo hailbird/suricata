@@ -159,7 +159,7 @@ static int IPV4OptValidateTimestamp(Packet *p, const IPV4Opt *o)
         ENGINE_SET_INVALID_EVENT(p, IPV4_OPT_MALFORMED);
         return -1;
     }
-    flag = *(o->data + 3) & 0x00ff;
+    flag = *(o->data + 1) & 0x0f;
 
     /* A flag of 1|3 means we have both the ip+ts in each record */
     rec_size = ((flag == 1) || (flag == 3)) ? 8 : 4;
@@ -186,7 +186,7 @@ static int IPV4OptValidateTimestamp(Packet *p, const IPV4Opt *o)
 static int IPV4OptValidateCIPSO(Packet *p, const IPV4Opt *o)
 {
 //    uint32_t doi;
-    uint8_t *tag;
+    const uint8_t *tag;
     uint16_t len;
 
     /* Check length */
@@ -299,7 +299,7 @@ typedef struct IPV4Options_ {
 /**
  * Decode/Validate IPv4 Options.
  */
-static void DecodeIPV4Options(Packet *p, uint8_t *pkt, uint16_t len, IPV4Options *opts)
+static void DecodeIPV4Options(Packet *p, const uint8_t *pkt, uint16_t len, IPV4Options *opts)
 {
     uint16_t plen = len;
 
@@ -484,7 +484,7 @@ static void DecodeIPV4Options(Packet *p, uint8_t *pkt, uint16_t len, IPV4Options
 
 }
 
-static int DecodeIPV4Packet(Packet *p, uint8_t *pkt, uint16_t len)
+static int DecodeIPV4Packet(Packet *p, const uint8_t *pkt, uint16_t len)
 {
     if (unlikely(len < IPV4_HEADER_LEN)) {
         ENGINE_SET_INVALID_EVENT(p, IPV4_PKT_TOO_SMALL);
@@ -529,7 +529,8 @@ static int DecodeIPV4Packet(Packet *p, uint8_t *pkt, uint16_t len)
     return 0;
 }
 
-int DecodeIPV4(ThreadVars *tv, DecodeThreadVars *dtv, Packet *p, uint8_t *pkt, uint16_t len, PacketQueue *pq)
+int DecodeIPV4(ThreadVars *tv, DecodeThreadVars *dtv, Packet *p,
+        const uint8_t *pkt, uint16_t len, PacketQueue *pq)
 {
     StatsIncr(tv, dtv->counter_ipv4);
 
@@ -1630,6 +1631,36 @@ end:
     return result;
 }
 
+/**
+ */
+static int DecodeEthernetTestIPv4Opt(void)
+{
+    uint8_t raw_eth[] = {
+        0xae, 0x71, 0x00, 0x00, 0x00, 0x4b, 0x06, 0x90, 0x61, 0x02, 0x00, 0xcd, 0x88, 0x64, 0x11, 0x00,
+        0x15, 0x00, 0x80, 0x64, 0x00, 0x21, 0x4c, 0x00, 0x00, 0x30, 0x42, 0xd6, 0xff, 0xff, 0xbd, 0x2f,
+        0x02, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+        0x01, 0x44, 0x05, 0x22, 0x02, 0x01
+    };
+
+    DefragInit();
+
+    Packet *p = SCMalloc(SIZE_OF_PACKET);
+    FAIL_IF_NULL(p);
+    ThreadVars tv;
+    DecodeThreadVars dtv;
+
+    memset(&dtv, 0, sizeof(DecodeThreadVars));
+    memset(&tv,  0, sizeof(ThreadVars));
+    memset(p, 0, SIZE_OF_PACKET);
+
+    DecodeEthernet(&tv, &dtv, p, raw_eth, sizeof(raw_eth), NULL);
+
+    SCFree(p);
+    DefragDestroy();
+    PASS;
+}
+
 #endif /* UNITTESTS */
 
 void DecodeIPV4RegisterTests(void)
@@ -1673,6 +1704,7 @@ void DecodeIPV4RegisterTests(void)
     UtRegisterTest("DecodeIPV4DefragTest01", DecodeIPV4DefragTest01);
     UtRegisterTest("DecodeIPV4DefragTest02", DecodeIPV4DefragTest02);
     UtRegisterTest("DecodeIPV4DefragTest03", DecodeIPV4DefragTest03);
+    UtRegisterTest("DecodeEthernetTestIPv4Opt", DecodeEthernetTestIPv4Opt);
 #endif /* UNITTESTS */
 }
 /**

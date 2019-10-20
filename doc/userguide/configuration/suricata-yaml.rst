@@ -251,7 +251,7 @@ the global config is documented.
       #decoder-events: true
       # Decoder event prefix in stats. Has been 'decoder' before, but that leads
       # to missing events in the eve.stats records. See issue #2225.
-      decoder-events-prefix: "decoder.event"
+      #decoder-events-prefix: "decoder.event"
       # Add stream events as stats.
       #stream-events: false
 
@@ -264,12 +264,12 @@ The decoder events that the decoding layer generates, can create a counter per
 event type. This behaviour is enabled by default. The `decoder-events` option
 can be set to `false` to disable.
 
-In 4.1.x there is a naming clash between the regular decoder counters and
-the decoder-event counters. This leads to a fair amount of decoder-event
+In 4.1.x there was a naming clash between the regular decoder counters and
+the decoder-event counters. This lead to a fair amount of decoder-event
 counters not being shown in the EVE.stats records. To address this without
-breaking existing setups, a config option `decoder-events-prefix` is added
+breaking existing setups, a config option `decoder-events-prefix` was added
 to change the naming of the decoder-events from decoder.<proto>.<event> to
-decoder.event.<proto>.<event>. In 5.0 which will become the default.
+decoder.event.<proto>.<event>. In 5.0 this became the default.
 See `issue 2225 <https://redmine.openinfosecfoundation.org/issues/2225>`_.
 
 Similar to the `decoder-events` option, the `stream-events` option controls
@@ -330,6 +330,10 @@ The format is documented in :ref:`Eve JSON Format <eve-json-format>`.
 
 Alert output for use with Barnyard2 (unified2.alert)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note:: Unified2 output has been deprecated and will be removed by
+          December 2019. Please see the `deprecation policy`_ for more
+          information.
 
 This log format is a binary format compatible with the unified2 output
 of another popular IDS format and is designed for use with Barnyard2
@@ -579,6 +583,9 @@ With this option it is possible to send all alert and event output to syslog.
 Drop.log, a line based information for dropped packets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. note:: This output has been deprecated and will be removed by
+          June 2020.
+
 If Suricata works in IPS mode, it can drop packets based on
 rules. Packets that are being dropped are saved in the drop.log file,
 a Netfilter log format.
@@ -588,8 +595,11 @@ a Netfilter log format.
   - drop:
        enabled: yes              #The option is enabled.
        filename: drop.log        #The log-name of the file for dropped packets.
-       append: yes               #If this option is set to yes, the last filled drop.log-file will not be
-                                  #overwritten while restarting Suricata. If set to 'no' the last filled drop.log file will be overwritten.
+       append: yes               #If this option is set to yes, the last filled
+                                 #drop.log-file will not be overwritten while
+                                 #restarting Suricata. If set to 'no' the last
+                                 #filled drop.log file will be overwritten.
+       filetype: regular         #regular, unis_stream, unix_dgram
 
 .. _suricata-yaml-file-store:
 
@@ -1194,10 +1204,16 @@ anomalies in streams. See :ref:`host-os-policy`.
     async_oneside: false         # do not enable async stream handling
     inline: no                   # stream inline mode
     drop-invalid: yes            # drop invalid packets
+    bypass: no
 
-The 'drop-invalid' option can be set to no to avoid blocking packets that are
+The ``drop-invalid`` option can be set to no to avoid blocking packets that are
 seen invalid by the streaming engine. This can be useful to cover some weird cases
 seen in some layer 2 IPS setup.
+
+The ``bypass`` option activates 'bypass' for a flow/session when either side
+of the session reaches its ``depth``.
+
+.. warning:: ``bypass`` can lead to missing important traffic. Use with care.
 
 **Example 11   Normal/IDS mode**
 
@@ -1309,13 +1325,13 @@ The library Libhtp is being used by Suricata to parse HTTP-sessions.
 
 While processing HTTP-traffic, Suricata has to deal with different
 kind of servers which each process anomalies in HTTP-traffic
-differently. The most common web-server is Apache. This is a open
-source web -server program.
+differently. The most common web-server is Apache. This is an open
+source web-server program.
 
-Beside Apache, IIS (Internet Information Services/Server)a web-server
+Besides Apache, IIS (Internet Information Services/Server) a web-server
 program of Microsoft is also well-known.
 
-Like with host-os-policy, it is important for Suricata to which
+Like with host-os-policy, it is important for Suricata to know which
 IP-address/network-address is used by which server. In Libhtp this
 assigning of web-servers to IP-and network addresses is called
 personality.
@@ -1336,27 +1352,23 @@ Currently Available Personalities:
 
 You can assign names to each block of settings. Which in this case
 is -apache and -iis7. Under these names you can set IP-addresses,
-network-addresses the personality and the request-body-limit.
+network-addresses the personality and a set of features.
 
 The version-specific personalities know exactly how web servers
-behave, and emulate that. The IDS personality (will be GENERIC in the
-future) would try to implement a best-effort approach that would work
-reasonably well in the cases where you do not know the specifics.
+behave, and emulate that. The IDS personality would try to implement
+a best-effort approach that would work reasonably well in the cases
+where you do not know the specifics.
 
 The default configuration also applies to every IP-address for which
 no specific setting is available.
 
-HTTP request body's are often big, so they take a lot of time to
+HTTP request bodies are often big, so they take a lot of time to
 process which has a significant impact on the performance. With the
 option 'request-body-limit' you can set the limit (in bytes) of the
 client-body that will be inspected. Setting it to 0 will inspect all
 of the body.
 
-HTTP response body's are often big, so they take a lot of time to
-process which has a significant impact on the performance. With the
-option 'response-body-limit' you can set the limit (in bytes) of the
-server-body that will be inspected. Setting it to 0 will inspect all
-of the body.
+The same goes for HTTP response bodies.
 
 ::
 
@@ -1382,8 +1394,7 @@ of the body.
            request-body-limit: 4096
            response-body-limit: 8192
 
-As of 1.4, Suricata makes available the whole set of libhtp
-customisations for its users.
+Suricata makes available the whole set of libhtp customisations for its users.
 
 You can now use these parameters in the conf to customise suricata's
 use of libhtp.
@@ -1394,7 +1405,16 @@ use of libhtp.
        # separators. They are not on Unix systems, but are on Windows systems.
        # If this setting is enabled, a path such as "/one\two/three" will be
        # converted to "/one/two/three".  Accepted values - yes, no.
-       #path-backslash-separators: yes
+       #path-convert-backslash-separators: yes
+
+       # Configures whether input data will be converted to lowercase.
+       #path-convert-lowercase: yes
+
+       # Configures how the server reacts to encoded NUL bytes.
+       #path-nul-encoded-terminates: no
+
+       # Configures how the server reacts to raw NUL bytes.
+       #path-nul-raw-terminates: no
 
        # Configures whether consecutive path segment separators will be
        # compressed. When enabled, a path such as "/one//two" will be normalized
@@ -1403,19 +1423,7 @@ use of libhtp.
        # backslash_separators and decode_separators are both enabled, the path
        # "/one\\/two\/%5cthree/%2f//four" will be converted to
        # "/one/two/three/four".  Accepted values - yes, no.
-       #path-compress-separators: yes
-
-       # This parameter is used to predict how a server will react when control
-       # characters are present in a request path, but does not affect path
-       # normalization.  Accepted values - none or status_400 */
-       #path-control-char-handling: none
-
-       # Controls the UTF-8 treatment of request paths. One option is to only
-       # validate path as UTF-8. In this case, the UTF-8 flags will be raised
-       # as appropriate, and the path will remain in UTF-8 (if it was UTF-8 in
-       # the first place). The other option is to convert a UTF-8 path into a
-       # single byte stream using best-fit mapping.  Accepted values - yes, no.
-       #path-convert-utf8: yes
+       #path-separators-compress: yes
 
        # Configures whether encoded path segment separators will be decoded.
        # Apache does not do this, but IIS does. If enabled, a path such as
@@ -1423,47 +1431,88 @@ use of libhtp.
        # backslash_separators option is also enabled, encoded backslash
        # characters will be converted too (and subsequently normalized to
        # forward slashes).  Accepted values - yes, no.
-       #path-decode-separators: yes
+       #path-separators-decode: yes
 
        # Configures whether %u-encoded sequences in path will be decoded. Such
        # sequences will be treated as invalid URL encoding if decoding is not
        # desireable.  Accepted values - yes, no.
-       #path-decode-u-encoding: yes
+       #path-u-encoding-decode: yes
 
        # Configures how server reacts to invalid encoding in path.  Accepted
        # values - preserve_percent, remove_percent, decode_invalid, status_400
-       #path-invalid-encoding-handling: preserve_percent
+       #path-url-encoding-invalid-handling: preserve_percent
 
-       # Configures how server reacts to invalid UTF-8 characters in path.
-       # This setting will not affect path normalization; it only controls what
-       # response status we expect for a request that contains invalid UTF-8
-       # characters.  Accepted values - none, status_400.
-       #path-invalid-utf8-handling: none
-
-       # Configures how server reacts to encoded NUL bytes. Some servers will
-       # terminate path at NUL, while some will respond with 400 or 404. When
-       # the termination option is not used, the NUL byte will remain in the
-       # path.  Accepted values - none, terminate, status_400, status_404.
-       # path-nul-encoded-handling: none
-
-       # Configures how server reacts to raw NUL bytes. Some servers will
-       # terminate path at NUL, while some will respond with 400 or 404. When
-       # the termination option is not used, the NUL byte will remain in the
-       # path.  Accepted values - none, terminate, status_400, status_404.
-       path-nul-raw-handling: none
+       # Controls whether the data should be treated as UTF-8 and converted
+       # to a single-byte stream using best-fit mapping
+       #path-utf8-convert-bestfit:yes
 
        # Sets the replacement character that will be used to in the lossy
        # best-fit mapping from Unicode characters into single-byte streams.
        # The question mark is the default replacement character.
-       #set-path-replacement-char: ?
+       #path-bestfit-replacement-char: ?
 
-       # Controls what the library does when it encounters an Unicode character
-       # where only a single-byte would do (e.g., the %u-encoded characters).
-       # Conversion always takes place; this parameter is used to correctly
-       # predict the status code used in response. In the future there will
-       # probably be an option to convert such characters to UCS-2 or UTF-8.
-       # Accepted values - bestfit, status_400 and status_404.
-       #set-path-unicode-mapping: bestfit
+       # Configures whether plus characters are converted to spaces
+       # when decoding URL-encoded strings.
+       #query-plusspace-decode: yes
+
+       #   response-body-decompress-layer-limit:
+       #                           Limit to how many layers of compression will be
+       #                           decompressed. Defaults to 2.
+
+       #   uri-include-all:        Include all parts of the URI. By default the
+       #                           'scheme', username/password, hostname and port
+       #                           are excluded.
+
+       #   meta-field-limit:       Hard size limit for request and response size
+       #                           limits.
+
+       # inspection limits
+           request-body-minimal-inspect-size: 32kb
+           request-body-inspect-window: 4kb
+           response-body-minimal-inspect-size: 40kb
+           response-body-inspect-window: 16kb
+
+       # auto will use http-body-inline mode in IPS mode, yes or no set it statically
+           http-body-inline: auto
+
+       # Decompress SWF files.
+       # 2 types: 'deflate', 'lzma', 'both' will decompress deflate and lzma
+       # compress-depth:
+       # Specifies the maximum amount of data to decompress,
+       # set 0 for unlimited.
+       # decompress-depth:
+       # Specifies the maximum amount of decompressed data to obtain,
+       # set 0 for unlimited.
+           swf-decompression:
+             enabled: yes
+             type: both
+             compress-depth: 0
+             decompress-depth: 0
+
+       # Take a random value for inspection sizes around the specified value.
+       # This lower the risk of some evasion technics but could lead
+       # detection change between runs. It is set to 'yes' by default.
+       #randomize-inspection-sizes: yes
+       # If randomize-inspection-sizes is active, the value of various
+       # inspection size will be choosen in the [1 - range%, 1 + range%]
+       # range
+       # Default value of randomize-inspection-range is 10.
+       #randomize-inspection-range: 10
+
+       # Can disable LZMA decompression
+       #lzma-enabled: yes
+       # Memory limit usage for LZMA decompression dictionary
+       # Data is decompressed until dictionary reaches this size
+       #lzma-memlimit: 1 Mb
+       # Maximum decompressed size with a compression ratio
+       # above 2048 (only reachable by LZMA)
+       #compression-bomb-limit: 1 Mb
+
+Other parameters are customizable from Suricata.
+::
+
+      #   double-decode-path:     Double decode path section of the URI
+      #   double-decode-query:    Double decode query section of the URI
 
 Configure SMB (Rust)
 ~~~~~~~~~~~~~~~~~~~~
@@ -1488,23 +1537,26 @@ independent. The ``probing parsers`` will only run on the ``detection-ports``.
 SMB is commonly used to transfer the DCERPC protocol. This traffic is also handled by
 this parser.
 
-Engine output
--------------
+Engine Logging
+--------------
 
-Logging configuration
-~~~~~~~~~~~~~~~~~~~~~
+The engine logging system logs information about the application such
+as errors and other diagnostic information during startup, runtime and
+shutdown of the Suricata engine. This does not include Suricata
+generated alerts and events.
 
-The logging subsystem can display all output except alerts and
-events. It gives information at runtime about what the engine is
-doing. This information can be displayed during the engine startup, at
-runtime and while shutting the engine down. For informational
-messages, errors, debugging, etc.
+The engine logging system has the following log levels:
 
-The log-subsystem has several log levels:
+- error
+- warning
+- notice
+- info
+- perf
+- config
+- debug
 
-Error, warning, informational and debug. Note that debug level logging
-will only be emitted if Suricata was compiled with the --enable-debug
-configure option.
+Note that debug level logging will only be emitted if Suricata was
+compiled with the ``--enable-debug`` configure option.
 
 The first option within the logging configuration is the
 default-log-level. This option determines the severity/importance
@@ -1513,17 +1565,72 @@ than the one set here, will not be shown. The default setting is
 Info. This means that error, warning and info will be shown and the
 other levels won't be.
 
-There are more levels: emergency, alert, critical and notice, but
-those are not used by Suricata yet. This option can be changed in the
-configuration, but can also be overridden in the command line by the
-environment variable: SC_LOG_LEVEL .
+Default Configuration Example
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ::
+
+  # Logging configuration.  This is not about logging IDS alerts/events, but
+  # output about what Suricata is doing, like startup messages, errors, etc.
+  logging:
+    # The default log level, can be overridden in an output section.
+    # Note that debug level logging will only be emitted if Suricata was
+    # compiled with the --enable-debug configure option.
+    #
+    # This value is overridden by the SC_LOG_LEVEL env var.
+    default-log-level: notice
+
+    # The default output format.  Optional parameter, should default to
+    # something reasonable if not provided.  Can be overridden in an
+    # output section.  You can leave this out to get the default.
+    #
+    # This value is overridden by the SC_LOG_FORMAT env var.
+    #default-log-format: "[%i] %t - (%f:%l) <%d> (%n) -- "
+
+    # A regex to filter output.  Can be overridden in an output section.
+    # Defaults to empty (no filter).
+    #
+    # This value is overridden by the SC_LOG_OP_FILTER env var.
+    default-output-filter:
+
+    # Define your logging outputs.  If none are defined, or they are all
+    # disabled you will get the default - console output.
+    outputs:
+    - console:
+        enabled: yes
+        # type: json
+    - file:
+        enabled: yes
+        level: info
+        filename: suricata.log
+        # type: json
+    - syslog:
+        enabled: no
+        facility: local5
+        format: "[%i] <%d> -- "
+        # type: json
+
+
+Default Log Level
+~~~~~~~~~~~~~~~~~
+
+Example::
 
   logging:
     default-log-level: info
 
-Default log format
+This option sets the default log level. The default log level is
+`notice`. This value will be used in the individual logging
+configuration (console, file, syslog) if not otherwise set.
+
+.. note:: The ``-v`` command line option can be used to quickly
+          increase the log level at runtime. See :ref:`the -v command
+          line option <cmdline-option-v>`.
+
+The ``default-log-level`` set in the configuration value can be
+overriden by the ``SC_LOG_LEVEL`` environment variable.
+
+Default Log Format
 ~~~~~~~~~~~~~~~~~~
 
 A logging line exists of two parts. First it displays meta information
@@ -1562,7 +1669,7 @@ The last three, f, l and n are mainly convenient for developers.
 The log-format can be overridden in the command line by the
 environment variable: SC_LOG_FORMAT
 
-Output-filter
+Output Filter
 ~~~~~~~~~~~~~
 
 Within logging you can set an output-filter. With this output-filter
@@ -1574,10 +1681,10 @@ matches.
 
   default-output-filter:               #In this option the regular expression can be entered.
 
-This value is overridden by the environment var:	SC_LOG_OP_FILTER
+This value is overridden by the environment var: SC_LOG_OP_FILTER
 
-Outputs
-~~~~~~~
+Logging Outputs
+~~~~~~~~~~~~~~~
 
 There are different ways of displaying output. The output can appear
 directly on your screen, it can be placed in a file or via syslog. The
@@ -1590,13 +1697,16 @@ computers etc.)
   outputs:
     - console:                                    #Output on your screen.
         enabled: yes                              #This option is enabled.
+        #level: notice                            #Use a different level than the default.
     - file:                                       #Output stored in a file.
         enabled: no                               #This option is not enabled.
         filename: /var/log/suricata.log           #Filename and location on disc.
+        level: info                               #Use a different level than the default.
     - syslog:                                     #This is a program to direct log-output to several directions.
         enabled: no                               #The use of this program is not enabled.
         facility: local5                          #In this option you can set a syslog facility.
         format: "[%i] <%d> -- "                   #The option to set your own format.
+        #level: notice                            #Use a different level than the default.
 
 Packet Acquisition
 ------------------
@@ -2239,3 +2349,5 @@ If the pool was depleted a hint will be printed at the engines exit.
 States are allocated as follows: for each detect script a state is used per
 detect thread. For each output script, a single state is used. Keep in
 mind that a rule reload temporary doubles the states requirement.
+
+.. _deprecation policy: https://suricata-ids.org/about/deprecation-policy/

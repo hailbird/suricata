@@ -423,7 +423,7 @@ typedef struct Flow_
     uint32_t de_ctx_version;
 
     /** Thread ID for the stream/detect portion of this flow */
-    FlowThreadId thread_id;
+    FlowThreadId thread_id[2];
 
     /** ttl tracking */
     uint8_t min_ttl_toserver;
@@ -468,7 +468,9 @@ enum FlowState {
     FLOW_STATE_ESTABLISHED,
     FLOW_STATE_CLOSED,
     FLOW_STATE_LOCAL_BYPASSED,
+#ifdef CAPTURE_OFFLOAD
     FLOW_STATE_CAPTURE_BYPASSED,
+#endif
 };
 
 typedef struct FlowProtoTimeout_ {

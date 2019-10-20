@@ -69,7 +69,7 @@
 
 /* the name of our binary */
 #define PROG_NAME "Suricata"
-#define PROG_VER "5.0.0-dev"
+#define PROG_VER PACKAGE_VERSION
 
 /* workaround SPlint error (don't know __gnuc_va_list) */
 #ifdef S_SPLINT_S
@@ -153,6 +153,7 @@ typedef struct SCInstance_ {
 
     bool system;
     bool set_logdir;
+    bool set_datadir;
 
     int delayed_detect;
     int disabled_detect;
@@ -166,6 +167,7 @@ typedef struct SCInstance_ {
     const char *log_dir;
     const char *progname; /**< pointer to argv[0] */
     const char *conf_filename;
+    char *strict_rule_parsing_string;
 } SCInstance;
 
 
@@ -174,9 +176,11 @@ void GlobalsInitPreConfig(void);
 
 extern volatile uint8_t suricata_ctl_flags;
 extern int g_disable_randomness;
+extern uint16_t g_vlan_mask;
 
 #include <ctype.h>
 #define u8_tolower(c) tolower((uint8_t)(c))
+#define u8_toupper(c) toupper((uint8_t)(c))
 
 void EngineStop(void);
 void EngineDone(void);

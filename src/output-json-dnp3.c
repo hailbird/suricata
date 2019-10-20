@@ -43,9 +43,6 @@
 #include "output-json-dnp3.h"
 #include "output-json-dnp3-objects.h"
 
-#ifdef HAVE_LIBJANSSON
-#include <jansson.h>
-
 typedef struct LogDNP3FileCtx_ {
     LogFileCtx *file_ctx;
     uint32_t    flags;
@@ -398,7 +395,6 @@ static OutputInitResult OutputDNP3LogInitSub(ConfNode *conf, OutputCtx *parent_c
     return result;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
 
 static TmEcode JsonDNP3LogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
@@ -413,7 +409,7 @@ static TmEcode JsonDNP3LogThreadInit(ThreadVars *t, const void *initdata, void *
         return TM_ECODE_FAILED;
     }
 
-    thread->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    thread->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (unlikely(thread->buffer == NULL)) {
         SCFree(thread);
         return TM_ECODE_FAILED;
@@ -450,11 +446,3 @@ void JsonDNP3LogRegister(void)
         JsonDNP3LoggerToClient, 1, 1, JsonDNP3LogThreadInit,
         JsonDNP3LogThreadDeinit, NULL);
 }
-
-#else
-
-void JsonDNP3LogRegister (void)
-{
-}
-
-#endif

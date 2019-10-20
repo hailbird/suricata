@@ -3,7 +3,7 @@
     AC_CONFIG_HEADERS([config.h])
     AC_CONFIG_SRCDIR([src/suricata.c])
     AC_CONFIG_MACRO_DIR(m4)
-    AM_INIT_AUTOMAKE
+    AM_INIT_AUTOMAKE([tar-ustar])
 
     AC_LANG([C])
     AC_PROG_CC_C99
@@ -28,6 +28,15 @@
                        compiler=gcc, [])])
     AC_LANG_POP([C])
     AC_MSG_RESULT([${compiler}])
+
+    AC_ARG_WITH([clang],
+                [  --with-clang=PROGRAM    path to Clang for compiling eBPF code. Use if the main C compiler is not Clang.],
+                [CLANG="$withval"],
+                [AS_IF([test "$compiler" = clang],
+                       [CLANG="$CC"],
+                       [AC_PATH_PROG([CLANG],[clang])])])
+
+    AC_SUBST([CLANG])
 
     case "$compiler" in
         clang)
@@ -88,7 +97,6 @@
         exit 1
     fi
 
-    python_version="not set"
     python_path="not set"
 
     AC_ARG_ENABLE(python,
@@ -100,16 +108,24 @@
         AC_PATH_PROGS(HAVE_PYTHON, python3 python2.7 python2 python, "no")
         if test "$HAVE_PYTHON" = "no"; then
             echo
-            echo "   Warning! python not found, you will not be     "
-            echo "   able to install suricatasc unix socket client   "
+            echo "   Warning! Python not found."
+            echo
+            echo "   Python is required for additional tools like"
+            echo "   suricatasc, suricatactl and suricata-update."
+            echo "   It is also required when building from git."
             echo
             enable_python="no"
 	else
 	    python_path="$HAVE_PYTHON"
-	    python_version="$($HAVE_PYTHON --version)"
         fi
     fi
     AM_CONDITIONAL([HAVE_PYTHON], [test "x$enable_python" = "xyes"])
+
+    # Get the Python major version. This is only for information
+    # messages displayed during configure.
+    if test "x$HAVE_PYTHON" != "xno"; then
+       pymv="$($HAVE_PYTHON -c 'import sys; print(sys.version_info[[0]]);')"
+    fi
 
     # Check for python-distutils (setup).
     have_python_distutils="no"
@@ -129,7 +145,8 @@
        echo "    Warning: Python distutils not found. Python tools will"
        echo "        not be installed."
        echo ""
-       echo "    Ubuntu/Debian: apt install `basename ${HAVE_PYTHON}`-distutils"
+       echo "    Install the distutils module for Python ${pymv} to enable"
+       echo "    the Python tools."
        echo ""
     fi
 
@@ -212,7 +229,7 @@
     # Checks for library functions.
     AC_FUNC_MALLOC
     AC_FUNC_REALLOC
-    AC_CHECK_FUNCS([gettimeofday memset strcasecmp strchr strdup strndup strerror strncasecmp strtol strtoul memchr memrchr clock_gettime])
+    AC_CHECK_FUNCS([gettimeofday memset strcasecmp strchr strrchr strdup strndup strerror strncasecmp strtol strtoul memchr memrchr clock_gettime])
     AC_CHECK_FUNCS([strptime])
 
     AC_CHECK_DECL([getrandom],
@@ -234,8 +251,7 @@
     #check for os
     AC_MSG_CHECKING([host os])
 
-    # lua pkg-config name differs per OS
-    LUA_PC_NAME="lua5.1"
+    # Default lua libname if not detected otherwise.
     LUA_LIB_NAME="lua5.1"
 
     # If no host os was detected, try with uname
@@ -251,7 +267,6 @@
     PCAP_LIB_NAME="pcap"
     case "$host" in
         *-*-*freebsd*)
-            LUA_PC_NAME="lua-5.1"
             LUA_LIB_NAME="lua-5.1"
             CFLAGS="${CFLAGS} -DOS_FREEBSD"
             CPPFLAGS="${CPPFLAGS} -I/usr/local/include -I/usr/local/include/libnet11"
@@ -259,14 +274,12 @@
             RUST_LDADD="-lrt -lm"
             ;;
         *-*-openbsd*)
-            LUA_PC_NAME="lua51"
             CFLAGS="${CFLAGS} -D__OpenBSD__"
             CPPFLAGS="${CPPFLAGS} -I/usr/local/include -I/usr/local/include/libnet-1.1"
             LDFLAGS="${LDFLAGS} -L/usr/local/lib -I/usr/local/lib/libnet-1.1"
             RUST_LDADD="-lm -lc++ -lc++abi"
             ;;
         *darwin*|*Darwin*)
-            LUA_PC_NAME="lua-5.1"
             LUA_LIB_NAME="lua-5.1"
             CFLAGS="${CFLAGS} -DOS_DARWIN"
             CPPFLAGS="${CPPFLAGS} -I/opt/local/include"
@@ -285,7 +298,6 @@
             RUST_LDADD="-luserenv -lshell32 -ladvapi32 -lgcc_eh"
             ;;
         *-*-cygwin)
-            LUA_PC_NAME="lua"
             LUA_LIB_NAME="lua"
             WINDOWS_PATH="yes"
             PCAP_LIB_NAME="wpcap"
@@ -443,49 +455,23 @@
            AS_HELP_STRING([--enable-ebpf-build], [Enable compilation of ebpf files]),[enable_ebpf_build=$enableval],[enable_ebpf_build=no])
     AM_CONDITIONAL([BUILD_EBPF], [test "x$enable_ebpf_build" = "xyes"])
 
-    if test "x$enable_ebpf_build" = "xyes"; then
-        if echo $CC | grep clang; then
-            if test "x$CC" = "xclang"; then
-                AC_PATH_PROG(HAVE_LLC, llc, "no")
-                if test "$HAVE_LLC" != "no"; then
-                    LLC="llc"
-                    AC_SUBST(LLC)
-                else
-                    llc_version_line=$($CC --version|$GREP version)
-                    llc_version=$(echo $llc_version_line| cut -d '(' -f 1 | $GREP -E -o '@<:@0-9@:>@\.@<:@0-9@:>@')
-                    AC_PATH_PROG(HAVE_LLC, "llc-$llc_version", "no")
-                    if test "$HAVE_LLC" != "no"; then
-                        LLC="llc-$llc_version"
-                        AC_SUBST(LLC)
-		    else
-                        echo "unable to find llc needed to build ebpf files"
-                        exit 1
+    AS_IF([test "x$enable_ebpf_build" = "xyes"],
+          [
+            AS_IF([test "$CLANG" != no],
+                  [
+                    llc_candidates=$($CLANG --version | \
+                      awk '/^clang version/ {
+                             split($3, v, ".");
+                             printf("llc-%s.%s llc-%s llc", v[[1]], v[[2]], v[[1]])
+                           }')
+                    AC_CHECK_PROGS([LLC], [$llc_candidates], "no")
+                    if test "$LLC" = "no"; then
+                        AC_MSG_ERROR([unable to find any of $llc_candidates needed to build ebpf files])
                     fi
-                fi
-            else
-                llc_version=$(echo $CC | cut -d '-' -f 2)
-                AC_PATH_PROG(HAVE_LLC, "llc-$llc_version", "no")
-                if test "$HAVE_LLC" != "no"; then
-                    LLC="llc-$llc_version"
                     AC_SUBST(LLC)
-                else
-                    llc_version_line=$($CC --version|$GREP version)
-                    llc_version=$(echo $llc_version_line| cut -d '(' -f 1 | $GREP -E -o '@<:@0-9@:>@\.@<:@0-9@:>@')
-                    AC_PATH_PROG(HAVE_LLC, "llc-$llc_version", "no")
-                    if test "$HAVE_LLC" != "no"; then
-                        LLC="llc-$llc_version"
-                        AC_SUBST(LLC)
-                    else
-                        echo "unable to find llc needed to build ebpf files"
-                        exit 1
-                    fi
-                fi
-            fi
-        else
-            echo "clang needed to build ebpf files"
-            exit 1        
-        fi
-    fi
+                  ],
+                  [AC_MSG_ERROR([clang needed to build ebpf files])])
+          ])
 
   # enable workaround for old barnyard2 for unified alert output
     AC_ARG_ENABLE(old-barnyard2,
@@ -595,48 +581,6 @@
             exit 1
         fi
         LIBS="${TMPLIBS} -lz"
-    fi
-
-  # liblzma
-    enable_liblzma=no
-
-    AC_ARG_WITH(liblzma_includes,
-            [  --with-liblzma-includes=DIR  liblzma include directory],
-            [with_liblzma_includes="$withval"],[with_liblzma_includes="no"])
-    AC_ARG_WITH(liblzma_libraries,
-            [  --with-liblzma-libraries=DIR    liblzma library directory],
-            [with_liblzma_libraries="$withval"],[with_liblzma_libraries="no"])
-
-    if test "$with_liblzma_includes" != "no"; then
-        CPPFLAGS="${CPPFLAGS} -I${with_liblzma_includes}"
-    fi
-    TMPLIBS="${LIBS}"
-
-    AC_CHECK_HEADER(lzma.h,
-        AC_CHECK_LIB(lzma,lzma_code,[
-	    AC_DEFINE([HAVE_LIBLZMA],[1],[liblzma available])
-	    LIBLZMA="yes"
-            if test "$LIBLZMA" = "yes"; then
-                if test "$with_liblzma_libraries" != "no"; then
-                    LDFLAGS="${LDFLAGS}  -L${with_liblzma_libraries}"
-                    LIBS="${TMPLIBS} -llzma"
-		else
-		    LIBS="${TMPLIBS} -llzma"
-                fi
-            fi]),LIBLZMA="no")
-
-    if test "$LIBLZMA" != "yes"; then
-        echo
-        echo "   Warning! liblzma library not found, you will not be"
-        echo "   able to decompress flash file compressed with lzma."
-        echo "   Debian/Ubuntu: apt install liblzma-dev"
-        echo "   Fedora: dnf install xz-devel"
-        echo "   CentOS/RHEL: yum install xz-devel"
-        echo
-        enable_liblzma=no
-    else
-        enable_liblzma=yes
-        LIBS="${TMPLIBS} -llzma"
     fi
 
   #libpcre
@@ -887,6 +831,8 @@
         exit 1
     fi
 
+    AC_CHECK_FUNCS([pthread_spin_unlock])
+
   # libjansson
     AC_ARG_WITH(libjansson_includes,
             [  --with-libjansson-includes=DIR  libjansson include directory],
@@ -1009,7 +955,7 @@
 
             if test "$NFNL" = "no"; then
                 echo
-                echo "   ERROR!  nfnetlink library not found, go get it"
+                echo "   nfnetlink library not found, go get it"
                 echo "   from www.netfilter.org."
                 echo "   we automatically append libnetfilter_queue/ when searching"
                 echo "   for headers etc. when the --with-libnfnetlink-includes directive"
@@ -1327,6 +1273,7 @@
     AC_CHECK_HEADERS([pcap.h pcap/pcap.h pcap/bpf.h])
 
     LIBPCAP=""
+    PKG_CHECK_MODULES([PCAP],libpcap,[CPPFLAGS="${CPPFLAGS} ${PCAP_CFLAGS}" LIBS="${LIBS} ${PCAP_LIBS}"],[:])
     AC_CHECK_LIB(${PCAP_LIB_NAME}, pcap_open_live,, LIBPCAP="no")
     if test "$LIBPCAP" = "no"; then
         echo
@@ -1566,26 +1513,20 @@
     # Assume suircata-update will not be installed.
     have_suricata_update="no"
     ruledirprefix="$sysconfdir"
-    no_suricata_update_comment="#"
-    has_suricata_update_comment=""
-    suricata_update_rule_files="suricata-update-rule-files"
 
     if test "$enable_suricata_update" = "yes"; then
       AC_CHECK_FILE([$srcdir/suricata-update/setup.py], [
           have_suricata_update="yes"], [])
     fi
-    AM_CONDITIONAL([HAVE_SURICATA_UPDATE],
-        [test "x$have_suricata_update" != "xno"])
 
     if test "$have_suricata_update" = "yes"; then
         if test "$have_python_yaml" != "yes"; then
 	    echo ""
 	    echo "    Warning: suricata-update will not be installed as the"
-	    echo "        depedency python-yaml is not installed."
+	    echo "        Python yaml module is not installed.."
 	    echo ""
-	    echo "    Debian/Ubuntu: apt install python-yaml"
-	    echo "    Fedora: dnf install python-yaml"
-	    echo "    CentOS/RHEL: yum install python-yaml"
+            echo "    Install the yaml module for Python ${pymv} to enable"
+            echo "    suricata-update."
 	    echo
 	else
             SURICATA_UPDATE_DIR="suricata-update"
@@ -1593,8 +1534,6 @@
             AC_CONFIG_FILES(suricata-update/Makefile)
             AC_OUTPUT
             ruledirprefix="$localstatedir/lib"
-            no_suricata_update_comment=""
-            has_suricata_update_comment="#"
 	fi
     fi
 
@@ -1602,7 +1541,7 @@
     if test "x$enable_python" != "xyes"; then
         install_suricatactl="requires python"
     elif test "x$have_python_distutils" != "xyes"; then
-        install_suricatactl="requires distutils"
+        install_suricatactl="no, requires distutils"
     else
         install_suricatactl="yes"
     fi
@@ -1611,14 +1550,17 @@
     if test "x$have_suricata_update" != "xyes"; then
         install_suricata_update="not bundled"
     elif test "x$enable_python" != "xyes"; then
-        install_suricata_update="requires python"
+        install_suricata_update="no, requires python"
     elif test "x$have_python_distutils" != "xyes"; then
-        install_suricata_update="requires distutils"
+        install_suricata_update="no, requires distutils"
     elif test "x$have_python_yaml" != "xyes"; then
-        install_suricata_update="requires pyyaml"
+        install_suricata_update="no, requires pyyaml"
     else
         install_suricata_update="yes"
     fi
+
+    AM_CONDITIONAL([INSTALL_SURICATA_UPDATE],
+        [test "x$install_suricata_update" = "xyes"])
 
   # libhtp
     AC_ARG_ENABLE(non-bundled-htp,
@@ -1655,12 +1597,12 @@
             echo
             exit 1
         fi
-        PKG_CHECK_MODULES(LIBHTPMINVERSION, [htp >= 0.5.20],[libhtp_minver_found="yes"],[libhtp_minver_found="no"])
+        PKG_CHECK_MODULES(LIBHTPMINVERSION, [htp >= 0.5.31],[libhtp_minver_found="yes"],[libhtp_minver_found="no"])
         if test "$libhtp_minver_found" = "no"; then
             PKG_CHECK_MODULES(LIBHTPDEVVERSION, [htp = 0.5.X],[libhtp_devver_found="yes"],[libhtp_devver_found="no"])
             if test "$libhtp_devver_found" = "no"; then
                 echo
-                echo "   ERROR! libhtp was found but it is neither >= 0.5.20, nor the dev 0.5.X"
+                echo "   ERROR! libhtp was found but it is neither >= 0.5.31, nor the dev 0.5.X"
                 echo
                 exit 1
             fi
@@ -1672,6 +1614,8 @@
         AC_CHECK_LIB([htp], [htp_decode_query_inplace],AC_DEFINE_UNQUOTED([HAVE_HTP_DECODE_QUERY_INPLACE],[1],[Found htp_decode_query_inplace function in libhtp]) ,,[-lhtp])
         AC_CHECK_LIB([htp], [htp_config_set_response_decompression_layer_limit],AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_RESPONSE_DECOMPRESSION_LAYER_LIMIT],[1],[Found htp_config_set_response_decompression_layer_limit function in libhtp]) ,,[-lhtp])
         AC_EGREP_HEADER(htp_config_set_path_decode_u_encoding, htp/htp.h, AC_DEFINE_UNQUOTED([HAVE_HTP_SET_PATH_DECODE_U_ENCODING],[1],[Found usable htp_config_set_path_decode_u_encoding function in libhtp]) )
+        AC_CHECK_LIB([htp], [htp_config_set_lzma_memlimit],AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_LZMA_MEMLIMIT],[1],[Found htp_config_set_lzma_memlimit function in libhtp]) ,,[-lhtp])
+        AC_CHECK_LIB([htp], [htp_config_set_compression_bomb_limit],AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_COMPRESSION_BOMB_LIMIT],[1],[Found htp_config_set_compression_bomb_limit function in libhtp]) ,,[-lhtp])
     ])
 
     if test "x$enable_non_bundled_htp" = "xno"; then
@@ -1692,6 +1636,8 @@
             AC_DEFINE_UNQUOTED([HAVE_HTP_DECODE_QUERY_INPLACE],[1],[Assuming htp_decode_query_inplace function in bundled libhtp])
             # enable when libhtp has been updated
             AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_RESPONSE_DECOMPRESSION_LAYER_LIMIT],[1],[Assuming htp_config_set_response_decompression_layer_limit function in bundled libhtp])
+            AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_LZMA_MEMLIMIT],[1],[Assuming htp_config_set_lzma_memlimit function in bundled libhtp])
+            AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_COMPRESSION_BOMB_LIMIT],[1],[Assuming htp_config_set_compression_bomb_limit function in bundled libhtp])
         else
             echo
             echo "  ERROR: Libhtp is not bundled. Get libhtp by doing:"
@@ -1865,7 +1811,7 @@
 
         if test "$NSPR" = "no"; then
             echo
-            echo "   ERROR!  libnspr library not found, go get it"
+            echo "   libnspr library not found, go get it"
             echo "   from Mozilla or your distribution:"
             echo
             echo "   Ubuntu: apt-get install libnspr4-dev"
@@ -1917,7 +1863,7 @@
 
         if test "$NSS" = "no"; then
             echo
-            echo "   ERROR! libnss library not found, go get it"
+            echo "   libnss library not found, go get it"
             echo "   from Mozilla or your distribution:"
             echo
             echo "   Ubuntu: apt-get install libnss3-dev"
@@ -2180,10 +2126,33 @@
 
     AM_CONDITIONAL([HAVE_LUA], [test "x$enable_lua" != "xno"])
 
+    # If Lua is enabled, test the integer size.
+    if test "x$enable_lua" = "xyes"; then
+        TMPLIBS="$LIBS"
+        LIBS=""
+
+        AC_MSG_CHECKING([size of lua integer])
+        AC_RUN_IFELSE([AC_LANG_PROGRAM([[#include <lua.h>]],
+            [[
+            if (sizeof(lua_Integer) == 8) {
+                return 1;
+            }
+            return 0;
+            ]])],
+            [
+                AC_MSG_RESULT([4])
+            ],
+            [
+                AC_MSG_RESULT([8])
+                AC_SUBST([LUA_INT8], ["lua_int8"])
+            ])
+        LIBS="$TMPLIBS"
+    fi
+
   # libmaxminddb
     AC_ARG_ENABLE(geoip,
 	        AS_HELP_STRING([--enable-geoip],[Enable GeoIP2 support]),
-	        [ enable_geoip="yes"],
+	        [ enable_geoip="$enableval"],
 	        [ enable_geoip="no"])
     AC_ARG_WITH(libmaxminddb_includes,
             [  --with-libmaxminddb-includes=DIR  libmaxminddb include directory],
@@ -2394,12 +2363,26 @@ fi
 
     enable_rust="yes"
     rust_compiler_version=$($RUSTC --version)
+    rustc_version=$(echo "$rust_compiler_version" | sed 's/^.*[[^0-9]]\([[0-9]]*\.[[0-9]]*\.[[0-9]]*\).*$/\1/')
     rust_cargo_version=$($CARGO --version)
+
+    MIN_RUSTC_VERSION="1.33.0"
+    AC_MSG_CHECKING(for Rust version $MIN_RUSTC_VERSION or newer)
+    AS_VERSION_COMPARE([$rustc_version], [$MIN_RUSTC_VERSION],
+        [
+            echo ""
+            echo "ERROR: Rust $MIN_RUSTC_VERSION or newer required."
+            echo ""
+            echo "Rust version ${rustc_version} was found."
+            echo ""
+            exit 1
+	],
+	[],
+	[])
+    AC_MSG_RESULT(yes)
 
     rust_vendor_comment="# "
     have_rust_vendor="no"
-    rust_compiler_version="not set"
-    rust_cargo_version="not set"
 
     # We may require Python if the Rust header stubs are not already
     # generated.
@@ -2411,12 +2394,12 @@ fi
         echo
         exit 1
     fi
-
     if test "x$enable_debug" = "xyes"; then
       RUST_SURICATA_LIB="../rust/target/debug/${RUST_SURICATA_LIBNAME}"
     else
       RUST_SURICATA_LIB="../rust/target/release/${RUST_SURICATA_LIBNAME}"
     fi
+
     RUST_LDADD="${RUST_SURICATA_LIB} ${RUST_LDADD}"
     CFLAGS="${CFLAGS} -I\${srcdir}/../rust/gen/c-headers"
     AC_SUBST(RUST_SURICATA_LIB)
@@ -2426,13 +2409,30 @@ fi
     else
       AC_SUBST([CARGO_HOME], [$CARGO_HOME])
     fi
+
+    # Check for rustup. RUSTUP_HOME needs to be set if rustup is in
+    # use, and a user uses sudo (depending on configuration), or su to
+    # perform the install
+    rustup_home_path="no"
+    if test "x$RUSTUP_HOME" != "x"; then
+        rustup_home_path="$RUSTUP_HOME"
+    else
+        AC_PATH_PROG(have_rustup, rustup, "no")
+        if test "x$have_rustup" != "xno"; then
+            rustup_home_path=$($have_rustup show home 2>/dev/null || echo "no")
+        fi
+    fi
+    rustup_home=""
+    if test "x$rustup_home_path" != "xno"; then
+        rustup_home="RUSTUP_HOME=\$(RUSTUP_HOME_PATH)"
+    fi
+    AC_SUBST([RUSTUP_HOME_PATH], [$rustup_home_path])
+    AC_SUBST([rustup_home])
+
     AC_CHECK_FILES([$srcdir/rust/vendor], [have_rust_vendor="yes"])
     if test "x$have_rust_vendor" = "xyes"; then
       rust_vendor_comment=""
     fi
-
-    rust_compiler_version=$(rustc --version)
-    rust_cargo_version=$(cargo --version)
 
     AC_SUBST(rust_vendor_comment)
     AM_CONDITIONAL([HAVE_RUST_VENDOR], [test "x$have_rust_vendor" = "xyes"])
@@ -2454,11 +2454,6 @@ fi
     ])
     AC_SUBST(RUST_FEATURES)
 
-    AC_ARG_ENABLE(rust_debug,
-           AS_HELP_STRING([--enable-rust-debug], [Rust not in --release mode]),[enable_rust_debug=$enableval],[enable_rust_debug=no])
-    AM_CONDITIONAL([RUST_DEBUG], [test "x$enable_rust_debug" = "xyes"])
-    AC_SUBST(RUST_DEBUG)
-
 # get revision
     if test -f ./revision; then
         REVISION=`cat ./revision`
@@ -2468,10 +2463,19 @@ fi
         if test "$HAVE_GIT_CMD" != "no"; then
             if [ test -d .git ]; then
                 REVISION=`git rev-parse --short HEAD`
+                DATE=`git log -1 --date=short --pretty=format:%cd`
+                REVISION="$REVISION $DATE"
                 AC_DEFINE_UNQUOTED([REVISION],[${REVISION}],[Git revision])
             fi
         fi
     fi
+
+if test "${enable_ebpf}" = "yes" || test "${enable_unittests}" = "yes"; then
+  AC_DEFINE([CAPTURE_OFFLOAD_MANAGER], [1],[Building flow bypass manager code])
+fi
+if test "${enable_ebpf}" = "yes" || test "${enable_nfqueue}" = "yes" || test "${enable_pfring}" = "yes" || test "${enable_unittests}" = "yes"; then
+  AC_DEFINE([CAPTURE_OFFLOAD], [1],[Building flow capture bypass code])
+fi
 
 AC_SUBST(CFLAGS)
 AC_SUBST(LDFLAGS)
@@ -2510,7 +2514,6 @@ if test "$WINDOWS_PATH" = "yes"; then
     esac
 
     e_sysconfdir="${e_winbase}\\\\"
-    e_sysconfrulesdir="$e_winbase\\\\rules\\\\"
     e_defaultruledir="$e_winbase\\\\rules\\\\"
     e_magic_file="$e_winbase\\\\magic.mgc"
     e_logdir="$e_winbase\\\\log"
@@ -2531,9 +2534,9 @@ else
     EXPAND_VARIABLE(localstatedir, e_logfilesdir, "/log/suricata/files")
     EXPAND_VARIABLE(localstatedir, e_logcertsdir, "/log/suricata/certs")
     EXPAND_VARIABLE(sysconfdir, e_sysconfdir, "/suricata/")
-    EXPAND_VARIABLE(sysconfdir, e_sysconfrulesdir, "/suricata/rules")
     EXPAND_VARIABLE(localstatedir, e_localstatedir, "/run/suricata")
     EXPAND_VARIABLE(datadir, e_datarulesdir, "/suricata/rules")
+    EXPAND_VARIABLE(localstatedir, e_datadir, "/lib/suricata/data")
     EXPAND_VARIABLE(ruledirprefix, e_defaultruledir, "/suricata/rules")
 
     e_abs_srcdir=$(cd $srcdir && pwd)
@@ -2544,17 +2547,15 @@ AC_SUBST(e_rundir)
 AC_SUBST(e_logfilesdir)
 AC_SUBST(e_logcertsdir)
 AC_SUBST(e_sysconfdir)
-AC_SUBST(e_sysconfrulesdir)
-AC_SUBST(e_localstatedir)
 AC_DEFINE_UNQUOTED([CONFIG_DIR],["$e_sysconfdir"],[Our CONFIG_DIR])
+AC_SUBST(e_localstatedir)
+AC_DEFINE_UNQUOTED([DATA_DIR],["$e_datadir"],[Our DATA_DIR])
 AC_SUBST(e_magic_file)
 AC_SUBST(e_magic_file_comment)
 AC_SUBST(e_enable_evelog)
 AC_SUBST(e_datarulesdir)
 AC_SUBST(e_defaultruledir)
 AC_SUBST(e_rustdir)
-AC_SUBST(has_suricata_update_comment)
-AC_SUBST(no_suricata_update_comment)
 
 EXPAND_VARIABLE(prefix, CONFIGURE_PREFIX)
 EXPAND_VARIABLE(sysconfdir, CONFIGURE_SYSCONDIR)
@@ -2595,7 +2596,6 @@ SURICATA_BUILD_CONF="Suricata Configuration:
   libnss support:                          ${enable_nss}
   libnspr support:                         ${enable_nspr}
   libjansson support:                      ${enable_jansson}
-  liblzma support:                         ${enable_liblzma}
   hiredis support:                         ${enable_hiredis}
   hiredis async with libevent:             ${enable_hiredis_async}
   Prelude support:                         ${enable_prelude}
@@ -2611,13 +2611,13 @@ SURICATA_BUILD_CONF="Suricata Configuration:
 
   Rust support:                            ${enable_rust}
   Rust strict mode:                        ${enable_rust_strict}
-  Rust debug mode:                         ${enable_rust_debug}
-  Rust compiler:                           ${rust_compiler_version}
-  Rust cargo:                              ${rust_cargo_version}
+  Rust compiler path:                      ${RUSTC}
+  Rust compiler version:                   ${rust_compiler_version}
+  Cargo path:                              ${CARGO}
+  Cargo version:                           ${rust_cargo_version}
 
   Python support:                          ${enable_python}
   Python path:                             ${python_path}
-  Python version:                          ${python_version}
   Python distutils                         ${have_python_distutils}
   Python yaml                              ${have_python_yaml}
   Install suricatactl:                     ${install_suricatactl}

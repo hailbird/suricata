@@ -170,13 +170,13 @@ void DetectPcreRegister (void)
  */
 int DetectPcrePayloadMatch(DetectEngineThreadCtx *det_ctx, const Signature *s,
                            const SigMatchData *smd, Packet *p, Flow *f,
-                           uint8_t *payload, uint32_t payload_len)
+                           const uint8_t *payload, uint32_t payload_len)
 {
     SCEnter();
 #define MAX_SUBSTRINGS 30
     int ret = 0;
     int ov[MAX_SUBSTRINGS];
-    uint8_t *ptr = NULL;
+    const uint8_t *ptr = NULL;
     uint16_t len = 0;
     uint16_t capture_len = 0;
 
@@ -1136,7 +1136,7 @@ static int DetectPcreParseTest10(void)
     DetectEngineCtx *de_ctx = DetectEngineCtxInit();
     FAIL_IF_NULL(de_ctx);
 
-    s->alproto = ALPROTO_DCERPC;
+    FAIL_IF(DetectSignatureSetAppProto(s, ALPROTO_DCERPC) < 0);
 
     FAIL_IF_NOT(DetectPcreSetup(de_ctx, s, "/bamboo/") == 0);
     FAIL_IF_NOT(s->sm_lists[g_dce_stub_data_buffer_id] == NULL && s->sm_lists[DETECT_SM_LIST_PMATCH] != NULL);
@@ -1654,7 +1654,6 @@ static int DetectPcreTestSig01(void)
     p->flowflags |= FLOW_PKT_ESTABLISHED;
     p->flags |= PKT_HAS_FLOW|PKT_STREAM_EST;
     f->alproto = ALPROTO_HTTP;
-
     DetectEngineCtx *de_ctx = DetectEngineCtxInit();
     FAIL_IF(de_ctx == NULL);
 

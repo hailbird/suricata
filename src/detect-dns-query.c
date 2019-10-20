@@ -197,7 +197,7 @@ static int PrefilterMpmDnsQueryRegister(DetectEngineCtx *de_ctx,
 
     return PrefilterAppendTxEngine(de_ctx, sgh, PrefilterTxDnsQuery,
             mpm_reg->app_v2.alproto, mpm_reg->app_v2.tx_min_progress,
-            pectx, PrefilterMpmDnsQueryFree, mpm_reg->name);
+            pectx, PrefilterMpmDnsQueryFree, mpm_reg->pname);
 }
 
 
@@ -209,6 +209,7 @@ void DetectDnsQueryRegister (void)
     sigmatch_table[DETECT_AL_DNS_QUERY].name = "dns.query";
     sigmatch_table[DETECT_AL_DNS_QUERY].alias = "dns_query";
     sigmatch_table[DETECT_AL_DNS_QUERY].desc = "sticky buffer to match DNS query-buffer";
+    sigmatch_table[DETECT_AL_DNS_QUERY].url = DOC_URL DOC_VERSION "/rules/dns-keywords.html#dns-query";
     sigmatch_table[DETECT_AL_DNS_QUERY].Setup = DetectDnsQuerySetup;
     sigmatch_table[DETECT_AL_DNS_QUERY].RegisterTests = DetectDnsQueryRegisterTests;
     sigmatch_table[DETECT_AL_DNS_QUERY].flags |= SIGMATCH_NOOPT;

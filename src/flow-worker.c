@@ -78,10 +78,12 @@ static inline TmEcode FlowUpdate(ThreadVars *tv, FlowWorkerThreadData *fw, Packe
 
     int state = SC_ATOMIC_GET(p->flow->flow_state);
     switch (state) {
+#ifdef CAPTURE_OFFLOAD
         case FLOW_STATE_CAPTURE_BYPASSED:
             StatsAddUI64(tv, fw->both_bypass_pkts, 1);
             StatsAddUI64(tv, fw->both_bypass_bytes, GET_PKT_LEN(p));
             return TM_ECODE_DONE;
+#endif
         case FLOW_STATE_LOCAL_BYPASSED:
             StatsAddUI64(tv, fw->local_bypass_pkts, 1);
             StatsAddUI64(tv, fw->local_bypass_bytes, GET_PKT_LEN(p));
@@ -176,6 +178,18 @@ static TmEcode FlowWorkerThreadDeinit(ThreadVars *tv, void *data)
 
 TmEcode Detect(ThreadVars *tv, Packet *p, void *data, PacketQueue *pq, PacketQueue *postpq);
 TmEcode StreamTcp (ThreadVars *, Packet *, void *, PacketQueue *, PacketQueue *);
+
+static void FlowPruneFiles(Packet *p)
+{
+    if (p->flow && p->flow->alstate) {
+        Flow *f = p->flow;
+        FileContainer *fc = AppLayerParserGetFiles(p->proto, f->alproto,
+            f->alstate, PKT_IS_TOSERVER(p) ? STREAM_TOSERVER : STREAM_TOCLIENT);
+        if (fc != NULL) {
+            FilePrune(fc);
+        }
+    }
+}
 
 static TmEcode FlowWorker(ThreadVars *tv, Packet *p, void *data, PacketQueue *preq, PacketQueue *unused)
 {
@@ -278,6 +292,9 @@ static TmEcode FlowWorker(ThreadVars *tv, Packet *p, void *data, PacketQueue *pr
 
     // Outputs.
     OutputLoggerLog(tv, p, fw->output_thread);
+
+    /* Prune any stored files. */
+    FlowPruneFiles(p);
 
     /*  Release tcp segments. Done here after alerting can use them. */
     if (p->flow != NULL && p->proto == IPPROTO_TCP) {

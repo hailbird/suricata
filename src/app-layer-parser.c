@@ -67,8 +67,10 @@
 #include "app-layer-krb5.h"
 #include "app-layer-dhcp.h"
 #include "app-layer-snmp.h"
+#include "app-layer-sip.h"
 #include "app-layer-template.h"
 #include "app-layer-template-rust.h"
+#include "app-layer-rdp.h"
 
 #include "conf.h"
 #include "util-spm.h"
@@ -123,6 +125,8 @@ typedef struct AppLayerParserProtoCtx_
 
     uint64_t (*GetTxDetectFlags)(void *tx, uint8_t dir);
     void (*SetTxDetectFlags)(void *tx, uint8_t dir, uint64_t);
+
+    void (*SetStreamDepthFlag)(void *tx, uint8_t flags);
 
     /* each app-layer has its own value */
     uint32_t stream_depth;
@@ -240,6 +244,7 @@ int AppLayerParserDeSetup(void)
 {
     SCEnter();
 
+    FTPParserCleanup();
     SMTPParserCleanup();
 
     SCReturnInt(0);
@@ -607,6 +612,16 @@ void AppLayerParserRegisterMpmIDsFuncs(uint8_t ipproto, AppProto alproto,
     SCReturn;
 }
 
+void AppLayerParserRegisterSetStreamDepthFlag(uint8_t ipproto, AppProto alproto,
+        void (*SetStreamDepthFlag)(void *tx, uint8_t flags))
+{
+    SCEnter();
+
+    alp_ctx.ctxs[FlowGetProtoMapping(ipproto)][alproto].SetStreamDepthFlag = SetStreamDepthFlag;
+
+    SCReturn;
+}
+
 /***** Get and transaction functions *****/
 
 void *AppLayerParserGetProtocolParserLocalStorage(uint8_t ipproto, AppProto alproto)
@@ -664,7 +679,7 @@ static AppLayerGetTxIterTuple AppLayerDefaultGetTxIterator(
                 .tx_id = tx_id,
                 .has_next = (tx_id + 1 < max_tx_id),
             };
-            SCLogDebug("tulpe: %p/%"PRIu64"/%s", tuple.tx_ptr, tuple.tx_id,
+            SCLogDebug("tuple: %p/%"PRIu64"/%s", tuple.tx_ptr, tuple.tx_id,
                     tuple.has_next ? "true" : "false");
             return tuple;
         }
@@ -1153,7 +1168,7 @@ void AppLayerParserSetTxDetectFlags(uint8_t ipproto, AppProto alproto, void *tx,
 /***** General *****/
 
 int AppLayerParserParse(ThreadVars *tv, AppLayerParserThreadCtx *alp_tctx, Flow *f, AppProto alproto,
-                        uint8_t flags, uint8_t *input, uint32_t input_len)
+                        uint8_t flags, const uint8_t *input, uint32_t input_len)
 {
     SCEnter();
 #ifdef DEBUG_VALIDATION
@@ -1372,6 +1387,20 @@ uint32_t AppLayerParserGetStreamDepth(const Flow *f)
     SCReturnInt(alp_ctx.ctxs[f->protomap][f->alproto].stream_depth);
 }
 
+void AppLayerParserSetStreamDepthFlag(uint8_t ipproto, AppProto alproto, void *state, uint64_t tx_id, uint8_t flags)
+{
+    SCEnter();
+    void *tx = NULL;
+    if (state != NULL) {
+        if ((tx = AppLayerParserGetTx(ipproto, alproto, state, tx_id)) != NULL) {
+            if (alp_ctx.ctxs[FlowGetProtoMapping(ipproto)][alproto].SetStreamDepthFlag != NULL) {
+                alp_ctx.ctxs[FlowGetProtoMapping(ipproto)][alproto].SetStreamDepthFlag(tx, flags);
+            }
+        }
+    }
+    SCReturn;
+}
+
 /***** Cleanup *****/
 
 void AppLayerParserStateCleanup(const Flow *f, void *alstate,
@@ -1505,8 +1534,10 @@ void AppLayerParserRegisterProtocolParsers(void)
     RegisterKRB5Parsers();
     RegisterDHCPParsers();
     RegisterSNMPParsers();
+    RegisterSIPParsers();
     RegisterTemplateRustParsers();
     RegisterTemplateParsers();
+    RegisterRdpParsers();
 
     /** IMAP */
     AppLayerProtoDetectRegisterProtocol(ALPROTO_IMAP, "imap");
@@ -1520,20 +1551,6 @@ void AppLayerParserRegisterProtocolParsers(void)
     } else {
         SCLogInfo("Protocol detection and parser disabled for %s protocol.",
                   "imap");
-    }
-
-    /** MSN Messenger */
-    AppLayerProtoDetectRegisterProtocol(ALPROTO_MSN, "msn");
-    if (AppLayerProtoDetectConfProtoDetectionEnabled("tcp", "msn")) {
-        if (AppLayerProtoDetectPMRegisterPatternCS(IPPROTO_TCP, ALPROTO_MSN,
-                                    "msn", 10, 6, STREAM_TOSERVER) < 0)
-        {
-            SCLogInfo("msn proto registration failure");
-            exit(EXIT_FAILURE);
-        }
-    } else {
-        SCLogInfo("Protocol detection and parser disabled for %s protocol.",
-                  "msn");
     }
 
     ValidateParsers();
@@ -1957,7 +1974,7 @@ typedef struct TestState_ {
  *          parser of occurence of an error.
  */
 static int TestProtocolParser(Flow *f, void *test_state, AppLayerParserState *pstate,
-                              uint8_t *input, uint32_t input_len,
+                              const uint8_t *input, uint32_t input_len,
                               void *local_data, const uint8_t flags)
 {
     SCEnter();

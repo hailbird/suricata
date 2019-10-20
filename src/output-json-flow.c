@@ -50,8 +50,6 @@
 #include "stream-tcp-private.h"
 #include "flow-storage.h"
 
-#ifdef HAVE_LIBJANSSON
-
 typedef struct LogJsonFileCtx_ {
     LogFileCtx *file_ctx;
     uint32_t flags; /** Store mode */
@@ -274,10 +272,12 @@ static void JsonFlowLogJSON(JsonFlowLogThread *aft, json_t *js, Flow *f)
                 json_object_set_new(hjs, "bypass",
                         json_string("local"));
                 break;
+#ifdef CAPTURE_OFFLOAD
             case FLOW_STATE_CAPTURE_BYPASSED:
                 json_object_set_new(hjs, "bypass",
                         json_string("capture"));
                 break;
+#endif
             default:
                 SCLogError(SC_ERR_INVALID_VALUE,
                            "Invalid flow state: %d, contact developers",
@@ -484,7 +484,6 @@ static OutputInitResult OutputFlowLogInitSub(ConfNode *conf, OutputCtx *parent_c
     return result;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
 static TmEcode JsonFlowLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     JsonFlowLogThread *aft = SCMalloc(sizeof(JsonFlowLogThread));
@@ -502,7 +501,7 @@ static TmEcode JsonFlowLogThreadInit(ThreadVars *t, const void *initdata, void *
     /* Use the Ouptut Context (file pointer and mutex) */
     aft->flowlog_ctx = ((OutputCtx *)initdata)->data; //TODO
 
-    aft->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    aft->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (aft->buffer == NULL) {
         SCFree(aft);
         return TM_ECODE_FAILED;
@@ -539,11 +538,3 @@ void JsonFlowLogRegister (void)
         "eve-log.flow", OutputFlowLogInitSub, JsonFlowLogger,
         JsonFlowLogThreadInit, JsonFlowLogThreadDeinit, NULL);
 }
-
-#else
-
-void JsonFlowLogRegister (void)
-{
-}
-
-#endif

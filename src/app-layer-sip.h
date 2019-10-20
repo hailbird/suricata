@@ -1,4 +1,4 @@
-/* Copyright (C) 2017 Open Information Security Foundation
+/* Copyright (C) 2019 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
  * the GNU General Public License version 2 as published by the Free
@@ -15,9 +15,20 @@
  * 02110-1301, USA.
  */
 
-#ifndef __APP_LAYER_DNS_UDP_RUST_H__
-#define __APP_LAYER_DNS_UDP_RUST_H__
+/**
+ * \file
+ *
+ * \author Giuseppe Longo <giuseppe@glongo.it>
+ */
 
-void RegisterRustDNSUDPParsers(void);
+#ifndef __APP_LAYER_SIP_H__
+#define __APP_LAYER_SIP_H__
 
-#endif /* !__APP_LAYER_DNS_UDP_RUST_H__ */
+void RegisterSIPParsers(void);
+void SIPParserRegisterTests(void);
+
+/** Opaque Rust types. */
+typedef struct SIPState_ SIPState;
+typedef struct SIPTransaction_ SIPTransaction;
+
+#endif /* __APP_LAYER_SIP_H__ */

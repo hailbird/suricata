@@ -33,14 +33,15 @@
 
 void OutputJsonRegister(void);
 
-#ifdef HAVE_LIBJANSSON
-
 enum OutputJsonLogDirection {
     LOG_DIR_PACKET = 0,
     LOG_DIR_FLOW,
     LOG_DIR_FLOW_TOCLIENT,
     LOG_DIR_FLOW_TOSERVER,
 };
+
+/* Suggested output buffer size */
+#define JSON_OUTPUT_BUFFER_SIZE 65535
 
 /* helper struct for OutputJSONMemBufferCallback */
 typedef struct OutputJSONMemBufferWrapper_ {
@@ -88,11 +89,10 @@ typedef struct OutputJsonThreadCtx_ {
 
 json_t *SCJsonBool(int val);
 json_t *SCJsonString(const char *val);
+json_t *JsonAddStringN(const char *string, size_t size);
 void SCJsonDecref(json_t *js);
 
 void JsonAddCommonOptions(const OutputJsonCommonSettings *cfg,
         const Packet *p, const Flow *f, json_t *js);
-
-#endif /* HAVE_LIBJANSSON */
 
 #endif /* __OUTPUT_JSON_H__ */

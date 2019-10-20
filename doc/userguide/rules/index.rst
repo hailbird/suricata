@@ -23,9 +23,12 @@ Suricata Rules
    ftp-keywords
    kerberos-keywords
    snmp-keywords
+   base64-keywords
+   sip-keywords
    app-layer
    xbits
    thresholding
    ip-reputation-rules
+   datasets
    rule-lua-scripting
    differences-from-snort

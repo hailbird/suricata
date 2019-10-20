@@ -19,6 +19,7 @@
 #include "conf.h"
 #include "util-device.h"
 #include "util-ioctl.h"
+#include "util-misc.h"
 
 #include "device-storage.h"
 
@@ -135,11 +136,7 @@ int LiveRegisterDevice(const char *dev)
         return -1;
     }
     /* create a short version to be used in thread names */
-    if (strlen(pd->dev) > MAX_DEVNAME) {
-        LiveSafeDeviceName(pd->dev, pd->dev_short, sizeof(pd->dev_short));
-    } else {
-        (void)strlcpy(pd->dev_short, pd->dev, sizeof(pd->dev_short));
-    }
+    LiveSafeDeviceName(pd->dev, pd->dev_short, sizeof(pd->dev_short));
 
     SC_ATOMIC_INIT(pd->pkts);
     SC_ATOMIC_INIT(pd->drop);
@@ -202,7 +199,7 @@ const char *LiveGetDeviceName(int number)
  */
 static int LiveSafeDeviceName(const char *devname, char *newdevname, size_t destlen)
 {
-    size_t devnamelen = strlen(devname);
+    const size_t devnamelen = strlen(devname);
 
     /* If we have to shorten the interface name */
     if (devnamelen > MAX_DEVNAME) {
@@ -219,29 +216,8 @@ static int LiveSafeDeviceName(const char *devname, char *newdevname, size_t dest
             return 1;
         }
 
-        size_t length;
-        size_t half;
-        size_t spaces;
+        ShortenString(devname, newdevname, destlen, '.');
 
-        half = (destlen-1) / 2;
-
-        /* If the destlen is an even number */
-        if (half * 2 == (destlen-1)) {
-            half = half - 1;
-        }
-
-        spaces = (destlen-1) - (half*2);
-        length = half;
-
-        /* Add the first half to the new dev name */
-        snprintf(newdevname, half+1, "%s", devname);
-
-        /* Add the amount of spaces wanted */
-        for (size_t i = half; i < half+spaces; i++) {
-            length = strlcat(newdevname, ".", destlen);
-        }
-
-        snprintf(newdevname+length, half+1, "%s", devname+(devnamelen-half));
         SCLogInfo("Shortening device name to: %s", newdevname);
     } else {
         strlcpy(newdevname, devname, destlen);

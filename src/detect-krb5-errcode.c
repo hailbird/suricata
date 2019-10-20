@@ -29,8 +29,6 @@
 
 #include "detect-krb5-errcode.h"
 
-#ifdef HAVE_RUST
-
 #include "app-layer-krb5.h"
 #include "rust-krb-detect-gen.h"
 
@@ -64,8 +62,8 @@ static int g_krb5_err_code_list_id = 0;
  */
 void DetectKrb5ErrCodeRegister(void) {
     sigmatch_table[DETECT_AL_KRB5_ERRCODE].name = "krb5_err_code";
-    sigmatch_table[DETECT_AL_KRB5_ERRCODE].desc = "match Kerberos 5 message type";
-    sigmatch_table[DETECT_AL_KRB5_ERRCODE].url = DOC_URL DOC_VERSION "/rules/kerberos-keywords.html#krb5_err_code";
+    sigmatch_table[DETECT_AL_KRB5_ERRCODE].desc = "match Kerberos 5 error code";
+    sigmatch_table[DETECT_AL_KRB5_ERRCODE].url = DOC_URL DOC_VERSION "/rules/kerberos-keywords.html#krb5-err-code";
     sigmatch_table[DETECT_AL_KRB5_ERRCODE].Match = NULL;
     sigmatch_table[DETECT_AL_KRB5_ERRCODE].AppLayerTxMatch = DetectKrb5ErrCodeMatch;
     sigmatch_table[DETECT_AL_KRB5_ERRCODE].Setup = DetectKrb5ErrCodeSetup;
@@ -264,11 +262,3 @@ static void DetectKrb5ErrCodeRegisterTests(void) {
                    DetectKrb5ErrCodeSignatureTest01);
 #endif /* UNITTESTS */
 }
-
-#else /* HAVE_RUST */
-
-void DetectKrb5ErrCodeRegister(void)
-{
-}
-
-#endif /* HAVE_RUST */

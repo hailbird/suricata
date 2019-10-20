@@ -37,13 +37,6 @@
 
 #include "app-layer-nfs-tcp.h"
 
-#ifndef HAVE_RUST
-void RegisterNFSTCPParsers(void)
-{
-}
-
-#else
-
 #include "rust.h"
 #include "rust-nfs-nfs-gen.h"
 
@@ -120,7 +113,7 @@ static AppLayerDecoderEvents *NFSTCPGetEvents(void *tx)
  */
 static AppProto NFSTCPProbingParserMidstream(Flow *f,
         uint8_t direction,
-        uint8_t *input, uint32_t input_len,
+        const uint8_t *input, uint32_t input_len,
         uint8_t *rdir)
 {
     if (input_len < NFSTCP_MIN_FRAME_LEN) {
@@ -146,7 +139,7 @@ static AppProto NFSTCPProbingParserMidstream(Flow *f,
  */
 static AppProto NFSTCPProbingParser(Flow *f,
         uint8_t direction,
-        uint8_t *input, uint32_t input_len,
+        const uint8_t *input, uint32_t input_len,
         uint8_t *rdir)
 {
     if (input_len < NFSTCP_MIN_FRAME_LEN) {
@@ -165,7 +158,7 @@ static AppProto NFSTCPProbingParser(Flow *f,
 }
 
 static int NFSTCPParseRequest(Flow *f, void *state,
-    AppLayerParserState *pstate, uint8_t *input, uint32_t input_len,
+    AppLayerParserState *pstate, const uint8_t *input, uint32_t input_len,
     void *local_data, const uint8_t flags)
 {
     uint16_t file_flags = FileFlowToFlags(f, STREAM_TOSERVER);
@@ -181,7 +174,7 @@ static int NFSTCPParseRequest(Flow *f, void *state,
 }
 
 static int NFSTCPParseResponse(Flow *f, void *state, AppLayerParserState *pstate,
-    uint8_t *input, uint32_t input_len, void *local_data,
+    const uint8_t *input, uint32_t input_len, void *local_data,
     const uint8_t flags)
 {
     uint16_t file_flags = FileFlowToFlags(f, STREAM_TOCLIENT);
@@ -416,5 +409,3 @@ void NFSTCPParserRegisterTests(void)
 #ifdef UNITTESTS
 #endif
 }
-
-#endif /* HAVE_RUST */

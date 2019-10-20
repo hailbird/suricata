@@ -256,5 +256,7 @@ void RegisterSSLParsers(void);
 void SSLParserRegisterTests(void);
 void SSLSetEvent(SSLState *ssl_state, uint8_t event);
 void SSLVersionToString(uint16_t, char *);
+void SSLEnableJA3(void);
+bool SSLJA3IsEnabled(void);
 
 #endif /* __APP_LAYER_SSL_H__ */

@@ -258,6 +258,14 @@ void SigMatchFree(SigMatch *sm)
     SCFree(sm);
 }
 
+static enum DetectKeywordId SigTableGetIndex(const SigTableElmt *e)
+{
+    const SigTableElmt *table = &sigmatch_table[0];
+    ptrdiff_t offset = e - table;
+    BUG_ON(offset >= DETECT_TBLSIZE);
+    return (enum DetectKeywordId)offset;
+}
+
 /* Get the detection module by name */
 static SigTableElmt *SigTableGet(char *name)
 {
@@ -276,6 +284,56 @@ static SigTableElmt *SigTableGet(char *name)
     }
 
     return NULL;
+}
+
+bool SigMatchSilentErrorEnabled(const DetectEngineCtx *de_ctx,
+        const enum DetectKeywordId id)
+{
+    return de_ctx->sm_types_silent_error[id];
+}
+
+bool SigMatchStrictEnabled(const enum DetectKeywordId id)
+{
+    if (id < DETECT_TBLSIZE) {
+        return ((sigmatch_table[id].flags & SIGMATCH_STRICT_PARSING) != 0);
+    }
+    return false;
+}
+
+void SigTableApplyStrictCommandlineOption(const char *str)
+{
+    if (str == NULL) {
+        /* nothing to be done */
+        return;
+    }
+
+    /* "all" just sets the flag for each keyword */
+    if (strcmp(str, "all") == 0) {
+        for (int i = 0; i < DETECT_TBLSIZE; i++) {
+            SigTableElmt *st = &sigmatch_table[i];
+            st->flags |= SIGMATCH_STRICT_PARSING;
+        }
+        return;
+    }
+
+    char *copy = SCStrdup(str);
+    if (copy == NULL)
+        FatalError(SC_ERR_MEM_ALLOC, "could not duplicate opt string");
+
+    char *xsaveptr = NULL;
+    char *key = strtok_r(copy, ",", &xsaveptr);
+    while (key != NULL) {
+        SigTableElmt *st = SigTableGet(key);
+        if (st != NULL) {
+            st->flags |= SIGMATCH_STRICT_PARSING;
+        } else {
+            SCLogWarning(SC_ERR_CMD_LINE, "'strict' command line "
+                    "argument '%s' not found", key);
+        }
+        key = strtok_r(NULL, ",", &xsaveptr);
+    }
+
+    SCFree(copy);
 }
 
 /**
@@ -659,6 +717,8 @@ static int SigParseOptions(DetectEngineCtx *de_ctx, Signature *s, char *optstr, 
 #undef URL
     }
 
+    int setup_ret = 0;
+
     /* Validate double quoting, trimming trailing white space along the way. */
     if (optvalue != NULL && strlen(optvalue) > 0) {
         size_t ovlen = strlen(optvalue);
@@ -739,16 +799,24 @@ static int SigParseOptions(DetectEngineCtx *de_ctx, Signature *s, char *optstr, 
             }
         }
         /* setup may or may not add a new SigMatch to the list */
-        if (st->Setup(de_ctx, s, ptr) < 0) {
-            SCLogDebug("\"%s\" failed to setup", st->name);
-            goto error;
-        }
+        setup_ret = st->Setup(de_ctx, s, ptr);
     } else {
         /* setup may or may not add a new SigMatch to the list */
-        if (st->Setup(de_ctx, s, NULL) < 0) {
-            SCLogDebug("\"%s\" failed to setup", st->name);
-            goto error;
+        setup_ret = st->Setup(de_ctx, s, NULL);
+    }
+    if (setup_ret < 0) {
+        SCLogDebug("\"%s\" failed to setup", st->name);
+
+        /* handle 'silent' error case */
+        if (setup_ret == -2) {
+            enum DetectKeywordId idx = SigTableGetIndex(st);
+            if (de_ctx->sm_types_silent_error[idx] == false) {
+                de_ctx->sm_types_silent_error[idx] = true;
+                return -1;
+            }
+            return -2;
         }
+        return setup_ret;
     }
     s->init_data->negated = false;
 
@@ -1795,12 +1863,17 @@ static Signature *SigInitHelper(DetectEngineCtx *de_ctx, const char *sigstr,
     /* default gid to 1 */
     sig->gid = 1;
 
-    if (SigParse(de_ctx, sig, sigstr, dir, &parser) < 0)
+    int ret = SigParse(de_ctx, sig, sigstr, dir, &parser);
+    if (ret == -2) {
+        de_ctx->sigerror_silent = true;
         goto error;
+    } else if (ret < 0) {
+        goto error;
+    }
 
     /* signature priority hasn't been overwritten.  Using default priority */
     if (sig->prio == -1)
-        sig->prio = 3;
+        sig->prio = DETECT_DEFAULT_PRIO;
 
     sig->num = de_ctx->signum;
     de_ctx->signum++;
@@ -1938,6 +2011,7 @@ Signature *SigInit(DetectEngineCtx *de_ctx, const char *sigstr)
     SCEnter();
 
     uint32_t oldsignum = de_ctx->signum;
+    de_ctx->sigerror_silent = false;
 
     Signature *sig;
 
@@ -2183,6 +2257,18 @@ static inline int DetectEngineSignatureIsDuplicate(DetectEngineCtx *de_ctx,
     /* make changes to the entry to reflect the presence of the new sig */
     sw_dup->s = sig;
     sw_dup->s_prev = NULL;
+
+    if (de_ctx->sig_list != NULL) {
+        SigDuplWrapper sw_tmp;
+        memset(&sw_tmp, 0, sizeof(SigDuplWrapper));
+        sw_tmp.s = de_ctx->sig_list;
+        SigDuplWrapper *sw_old = HashListTableLookup(de_ctx->dup_sig_hash_table,
+                                                     (void *)&sw_tmp, 0);
+        if (sw_old->s != sw_dup->s) {
+            // Link on top of the list if there was another element
+            sw_old->s_prev = sig;
+        }
+    }
 
     /* this is duplicate, but a duplicate that replaced the existing sig entry */
     ret = 2;
@@ -4010,9 +4096,16 @@ static int SigParseBidirWithSameSrcAndDest02(void)
 
 #endif /* UNITTESTS */
 
+#ifdef UNITTESTS
+void DetectParseRegisterTests (void);
+#include "tests/detect-parse.c"
+#endif
+
 void SigParseRegisterTests(void)
 {
 #ifdef UNITTESTS
+    DetectParseRegisterTests();
+
     UtRegisterTest("SigParseTest01", SigParseTest01);
     UtRegisterTest("SigParseTest02", SigParseTest02);
     UtRegisterTest("SigParseTest03", SigParseTest03);

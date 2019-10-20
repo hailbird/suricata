@@ -61,6 +61,7 @@ type_map = {
     "c_void": "void",
 
     "std::os::raw::c_char": "char",
+    "c_char": "char",
     "std::os::raw::c_int": "int",
     "c_int": "int",
     "std::os::raw::int8_t": "int8_t",
@@ -92,6 +93,8 @@ type_map = {
     "IKEV2Transaction": "IKEV2Transaction",
     "KRB5State": "KRB5State",
     "KRB5Transaction": "KRB5Transaction",
+    "SIPState": "SIPState",
+    "SIPTransaction": "SIPTransaction",
     "JsonT": "json_t",
     "DetectEngineState": "DetectEngineState",
     "core::DetectEngineState": "DetectEngineState",
@@ -104,6 +107,7 @@ type_map = {
     "CLuaState": "lua_State",
     "Store": "Store",
     "AppProto": "AppProto",
+    "DetectDnsOpcode": "void *",
 }
 
 def convert_type(rs_type):

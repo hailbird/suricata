@@ -948,7 +948,7 @@ static int Unified2IPv6TypeAlert(ThreadVars *t, const Packet *p, void *data)
         phdr->generator_id = htonl(pa->s->gid);
         phdr->signature_id = htonl(pa->s->id);
         phdr->signature_revision = htonl(pa->s->rev);
-        phdr->classification_id = htonl(pa->s->class);
+        phdr->classification_id = htonl(pa->s->class_id);
         phdr->priority_id = htonl(pa->s->prio);
 
         SCMutexLock(&file_ctx->fp_mutex);
@@ -1136,7 +1136,7 @@ static int Unified2IPv4TypeAlert (ThreadVars *tv, const Packet *p, void *data)
         phdr->generator_id = htonl(pa->s->gid);
         phdr->signature_id = htonl(pa->s->id);
         phdr->signature_revision = htonl(pa->s->rev);
-        phdr->classification_id = htonl(pa->s->class);
+        phdr->classification_id = htonl(pa->s->class_id);
         phdr->priority_id = htonl(pa->s->prio);
 
         /* check and enforce the filesize limit */
@@ -1280,6 +1280,10 @@ OutputInitResult Unified2AlertInitCtx(ConfNode *conf)
     OutputCtx* output_ctx = NULL;
     HttpXFFCfg *xff_cfg = NULL;
     int nostamp = 0;
+
+    SCLogWarning(SC_WARN_DEPRECATED,
+        "Unified2 alert has been deprecated and will be removed by "
+        "December 2019.");
 
     LogFileCtx* file_ctx = LogFileNewCtx();
     if (file_ctx == NULL) {

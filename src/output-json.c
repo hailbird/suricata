@@ -66,28 +66,12 @@
 
 #include "source-pcap-file.h"
 
-#ifndef HAVE_LIBJANSSON
-
-/** Handle the case where no JSON support is compiled in.
- *
- */
-
-int OutputJsonOpenFileCtx(LogFileCtx *, char *);
-
-void OutputJsonRegister (void)
-{
-    SCLogDebug("Can't register JSON output - JSON support was disabled during build.");
-}
-
-#else /* implied we do have JSON support */
-
 #define DEFAULT_LOG_FILENAME "eve.json"
 #define DEFAULT_ALERT_SYSLOG_FACILITY_STR       "local0"
 #define DEFAULT_ALERT_SYSLOG_FACILITY           LOG_LOCAL0
 #define DEFAULT_ALERT_SYSLOG_LEVEL              LOG_INFO
 #define MODULE_NAME "OutputJSON"
 
-#define OUTPUT_BUFFER_SIZE 65536
 #define MAX_JSON_SIZE 2048
 
 static void OutputJsonDeInitCtx(OutputCtx *);
@@ -148,6 +132,22 @@ json_t *SCJsonString(const char *val)
 /* Default Sensor ID value */
 static int64_t sensor_id = -1; /* -1 = not defined */
 
+/**
+ * \brief Create a JSON string from a character sequence
+ *
+ * \param Pointer to character sequence
+ * \param Number of characters to use from the sequence
+ * \retval JSON object for the character sequence
+ */
+json_t *JsonAddStringN(const char *string, size_t size)
+{
+    char tmpbuf[size + 1];
+
+    memcpy(tmpbuf, string, size);
+    tmpbuf[size] = '\0';
+
+    return SCJsonString(tmpbuf);
+}
 static void JsonAddPacketvars(const Packet *p, json_t *js_vars)
 {
     if (p == NULL || p->pktvar == NULL) {
@@ -823,7 +823,7 @@ int OutputJSONBuffer(json_t *js, LogFileCtx *file_ctx, MemBuffer **buffer)
 
     OutputJSONMemBufferWrapper wrapper = {
         .buffer = buffer,
-        .expand_by = OUTPUT_BUFFER_SIZE
+        .expand_by = JSON_OUTPUT_BUFFER_SIZE
     };
 
     int r = json_dump_callback(js, OutputJSONMemBufferCallback, &wrapper,
@@ -1085,5 +1085,3 @@ static void OutputJsonDeInitCtx(OutputCtx *output_ctx)
     SCFree(json_ctx);
     SCFree(output_ctx);
 }
-
-#endif

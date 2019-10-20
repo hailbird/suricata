@@ -1055,7 +1055,17 @@ static int StreamTcpPacketStateNone(ThreadVars *tv, Packet *p,
 
         if (TCP_GET_SACKOK(p) == 1) {
             ssn->flags |= STREAMTCP_FLAG_CLIENT_SACKOK;
-            SCLogDebug("ssn %p: SACK permited on SYN packet", ssn);
+            SCLogDebug("ssn %p: SACK permitted on SYN packet", ssn);
+        }
+
+        if (TCP_HAS_TFO(p)) {
+            ssn->flags |= STREAMTCP_FLAG_TCP_FAST_OPEN;
+            if (p->payload_len) {
+                StreamTcpUpdateNextSeq(ssn, &ssn->client, (ssn->client.next_seq + p->payload_len));
+                SCLogDebug("ssn: %p (TFO) [len: %d] isn %u base_seq %u next_seq %u payload len %u",
+                        ssn, p->tcpvars.tfo.len, ssn->client.isn, ssn->client.base_seq, ssn->client.next_seq, p->payload_len);
+                StreamTcpReassembleHandleSegment(tv, stt->ra_ctx, ssn, &ssn->client, p, pq);
+            }
         }
 
         SCLogDebug("ssn %p: ssn->client.isn %" PRIu32 ", "
@@ -1504,16 +1514,31 @@ static int StreamTcpPacketStateSynSent(ThreadVars *tv, Packet *p,
             return -1;
         }
 
-        /* Check if the SYN/ACK packet ack's the earlier
-         * received SYN packet. */
-        if (!(SEQ_EQ(TCP_GET_ACK(p), ssn->client.isn + 1))) {
-            StreamTcpSetEvent(p, STREAM_3WHS_SYNACK_WITH_WRONG_ACK);
-            SCLogDebug("ssn %p: ACK mismatch, packet ACK %" PRIu32 " != "
+        if (!(TCP_HAS_TFO(p) || (ssn->flags & STREAMTCP_FLAG_TCP_FAST_OPEN))) {
+            /* Check if the SYN/ACK packet ack's the earlier
+             * received SYN packet. */
+            if (!(SEQ_EQ(TCP_GET_ACK(p), ssn->client.isn + 1))) {
+                StreamTcpSetEvent(p, STREAM_3WHS_SYNACK_WITH_WRONG_ACK);
+                SCLogDebug("ssn %p: ACK mismatch, packet ACK %" PRIu32 " != "
+                        "%" PRIu32 " from stream", ssn, TCP_GET_ACK(p),
+                        ssn->client.isn + 1);
+                return -1;
+            }
+        } else {
+            if (!(SEQ_EQ(TCP_GET_ACK(p), ssn->client.next_seq))) {
+                StreamTcpSetEvent(p, STREAM_3WHS_SYNACK_WITH_WRONG_ACK);
+                SCLogDebug("ssn %p: (TFO) ACK mismatch, packet ACK %" PRIu32 " != "
+                        "%" PRIu32 " from stream", ssn, TCP_GET_ACK(p),
+                        ssn->client.next_seq);
+                return -1;
+            }
+            SCLogDebug("ssn %p: (TFO) ACK match, packet ACK %" PRIu32 " == "
                     "%" PRIu32 " from stream", ssn, TCP_GET_ACK(p),
-                    ssn->client.isn + 1);
-            return -1;
-        }
+                    ssn->client.next_seq);
 
+            ssn->flags |= STREAMTCP_FLAG_TCP_FAST_OPEN;
+            StreamTcpPacketSetState(p, ssn, TCP_ESTABLISHED);
+        }
         StreamTcp3whsSynAckUpdate(ssn, p, /* no queue override */NULL);
 
     } else if (p->tcph->th_flags & TH_SYN) {
@@ -1857,6 +1882,9 @@ static int StreamTcpPacketStateSynRecv(ThreadVars *tv, Packet *p,
                 SCLogDebug("ssn %p: ACK received on midstream SYN/ACK "
                         "pickup session",ssn);
                 /* fall through */
+            } else if (ssn->flags & STREAMTCP_FLAG_TCP_FAST_OPEN) {
+                SCLogDebug("ssn %p: ACK received on TFO session",ssn);
+                /* fall through */
 
             } else {
                 /* if we missed traffic between the S/SA and the current
@@ -2019,11 +2047,16 @@ static int StreamTcpPacketStateSynRecv(ThreadVars *tv, Packet *p,
                     &ssn->client, p, pq);
 
         /* toclient packet: after having missed the 3whs's final ACK */
-        } else if (ack_indicates_missed_3whs_ack_packet &&
+        } else if ((ack_indicates_missed_3whs_ack_packet ||
+                    (ssn->flags & STREAMTCP_FLAG_TCP_FAST_OPEN)) &&
                 SEQ_EQ(TCP_GET_ACK(p), ssn->client.last_ack) &&
                 SEQ_EQ(TCP_GET_SEQ(p), ssn->server.next_seq))
         {
-            SCLogDebug("ssn %p: packet fits perfectly after a missed 3whs-ACK", ssn);
+            if (ack_indicates_missed_3whs_ack_packet) {
+                SCLogDebug("ssn %p: packet fits perfectly after a missed 3whs-ACK", ssn);
+            } else {
+                SCLogDebug("ssn %p: (TFO) expected packet fits perfectly after SYN/ACK", ssn);
+            }
 
             StreamTcpUpdateNextSeq(ssn, &ssn->server, (TCP_GET_SEQ(p) + p->payload_len));
 
@@ -4670,6 +4703,25 @@ static inline int StreamTcpStateDispatch(ThreadVars *tv, Packet *p,
     return 0;
 }
 
+static inline void HandleThreadId(ThreadVars *tv, Packet *p, StreamTcpThread *stt)
+{
+    const int idx = (!(PKT_IS_TOSERVER(p)));
+
+    /* assign the thread id to the flow */
+    if (unlikely(p->flow->thread_id[idx] == 0)) {
+        p->flow->thread_id[idx] = (FlowThreadId)tv->id;
+    } else if (unlikely((FlowThreadId)tv->id != p->flow->thread_id[idx])) {
+        SCLogDebug("wrong thread: flow has %u, we are %d", p->flow->thread_id[idx], tv->id);
+        if (p->pkt_src == PKT_SRC_WIRE) {
+            StatsIncr(tv, stt->counter_tcp_wrong_thread);
+            if ((p->flow->flags & FLOW_WRONG_THREAD) == 0) {
+                p->flow->flags |= FLOW_WRONG_THREAD;
+                StreamTcpSetEvent(p, STREAM_WRONG_THREAD);
+            }
+        }
+    }
+}
+
 /* flow is and stays locked */
 int StreamTcpPacket (ThreadVars *tv, Packet *p, StreamTcpThread *stt,
                      PacketQueue *pq)
@@ -4680,19 +4732,7 @@ int StreamTcpPacket (ThreadVars *tv, Packet *p, StreamTcpThread *stt,
 
     SCLogDebug("p->pcap_cnt %"PRIu64, p->pcap_cnt);
 
-    /* assign the thread id to the flow */
-    if (unlikely(p->flow->thread_id == 0)) {
-        p->flow->thread_id = (FlowThreadId)tv->id;
-    } else if (unlikely((FlowThreadId)tv->id != p->flow->thread_id)) {
-        SCLogDebug("wrong thread: flow has %u, we are %d", p->flow->thread_id, tv->id);
-        if (p->pkt_src == PKT_SRC_WIRE) {
-            StatsIncr(tv, stt->counter_tcp_wrong_thread);
-            if ((p->flow->flags & FLOW_WRONG_THREAD) == 0) {
-                p->flow->flags |= FLOW_WRONG_THREAD;
-                StreamTcpSetEvent(p, STREAM_WRONG_THREAD);
-            }
-        }
-    }
+    HandleThreadId(tv, p, stt);
 
     TcpSession *ssn = (TcpSession *)p->flow->protoctx;
 
@@ -4840,7 +4880,7 @@ int StreamTcpPacket (ThreadVars *tv, Packet *p, StreamTcpThread *stt,
         /* check for conditions that may make us not want to log this packet */
 
         /* streams that hit depth */
-        if ((ssn->client.flags & STREAMTCP_STREAM_FLAG_DEPTH_REACHED) &&
+        if ((ssn->client.flags & STREAMTCP_STREAM_FLAG_DEPTH_REACHED) ||
              (ssn->server.flags & STREAMTCP_STREAM_FLAG_DEPTH_REACHED))
         {
             /* we can call bypass callback, if enabled */
@@ -10284,7 +10324,7 @@ static int StreamTcpTest40(void)
 
     DecodeVLAN(&tv, &dtv, p, GET_PKT_DATA(p), GET_PKT_LEN(p), NULL);
 
-    FAIL_IF(p->vlanh[0] == NULL);
+    FAIL_IF(p->vlan_id[0] == 0);
 
     FAIL_IF(p->tcph == NULL);
 

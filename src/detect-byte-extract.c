@@ -99,6 +99,8 @@ static void DetectByteExtractFree(void *);
 void DetectByteExtractRegister(void)
 {
     sigmatch_table[DETECT_BYTE_EXTRACT].name = "byte_extract";
+    sigmatch_table[DETECT_BYTE_EXTRACT].desc = "extract <num of bytes> at a particular <offset> and store it in <var_name>";
+    sigmatch_table[DETECT_BYTE_EXTRACT].url = DOC_URL DOC_VERSION "/rules/payload-keywords.html#byte-extract";
     sigmatch_table[DETECT_BYTE_EXTRACT].Match = NULL;
     sigmatch_table[DETECT_BYTE_EXTRACT].Setup = DetectByteExtractSetup;
     sigmatch_table[DETECT_BYTE_EXTRACT].Free = DetectByteExtractFree;
@@ -108,12 +110,12 @@ void DetectByteExtractRegister(void)
 }
 
 int DetectByteExtractDoMatch(DetectEngineThreadCtx *det_ctx, const SigMatchData *smd,
-                             const Signature *s, uint8_t *payload,
+                             const Signature *s, const uint8_t *payload,
                              uint16_t payload_len, uint64_t *value,
                              uint8_t endian)
 {
     DetectByteExtractData *data = (DetectByteExtractData *)smd->ctx;
-    uint8_t *ptr = NULL;
+    const uint8_t *ptr = NULL;
     int32_t len = 0;
     uint64_t val = 0;
     int extbytes;
@@ -538,7 +540,8 @@ static int DetectByteExtractSetup(DetectEngineCtx *de_ctx, Signature *s, const c
             sm_list = DETECT_SM_LIST_PMATCH;
         }
 
-        s->alproto = ALPROTO_DCERPC;
+        if (DetectSignatureSetAppProto(s, ALPROTO_DCERPC) < 0)
+            goto error;
         s->flags |= SIG_FLAG_APPLAYER;
 
     } else if (data->flags & DETECT_BYTE_EXTRACT_FLAG_RELATIVE) {

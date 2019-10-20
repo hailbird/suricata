@@ -53,8 +53,6 @@
 #include "app-layer-template-rust.h"
 #include "output-json-template-rust.h"
 
-#if defined(HAVE_LIBJANSSON) && defined(HAVE_RUST)
-
 #include "rust-applayertemplate-logger-gen.h"
 
 typedef struct LogTemplateFileCtx_ {
@@ -132,8 +130,6 @@ static OutputInitResult OutputTemplateLogInitSub(ConfNode *conf,
     return result;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
-
 static TmEcode JsonTemplateLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     LogTemplateLogThread *thread = SCCalloc(1, sizeof(*thread));
@@ -147,7 +143,7 @@ static TmEcode JsonTemplateLogThreadInit(ThreadVars *t, const void *initdata, vo
         return TM_ECODE_FAILED;
     }
 
-    thread->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    thread->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (unlikely(thread->buffer == NULL)) {
         SCFree(thread);
         return TM_ECODE_FAILED;
@@ -187,11 +183,3 @@ void JsonTemplateRustLogRegister(void)
 
     SCLogNotice("Template JSON logger registered.");
 }
-
-#else /* No JSON support. */
-
-void JsonTemplateRustLogRegister(void)
-{
-}
-
-#endif /* HAVE_LIBJANSSON */

@@ -17,7 +17,7 @@
 
 use std::cmp::min;
 
-use dhcp::dhcp::*;
+use crate::dhcp::dhcp::*;
 use nom::*;
 
 pub struct DHCPMessage {
@@ -199,7 +199,7 @@ pub fn dhcp_parse(input: &[u8]) -> IResult<&[u8], DHCPMessage> {
         Ok((rem, header)) => {
             let mut options = Vec::new();
             let mut next = rem;
-            let mut malformed_options = false;
+            let malformed_options = false;
             let mut truncated_options = false;
             loop {
                 match parse_option(next) {
@@ -233,8 +233,8 @@ pub fn dhcp_parse(input: &[u8]) -> IResult<&[u8], DHCPMessage> {
 
 #[cfg(test)]
 mod tests {
-    use dhcp::dhcp::*;
-    use dhcp::parser::*;
+    use crate::dhcp::dhcp::*;
+    use crate::dhcp::parser::*;
 
     #[test]
     fn test_parse_discover() {

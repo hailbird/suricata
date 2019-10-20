@@ -65,6 +65,10 @@
 #include <sys/ioctl.h>
 #endif
 
+#if HAVE_LINUX_SOCKIOS_H
+#include <linux/sockios.h>
+#endif
+
 #ifdef HAVE_PACKET_EBPF
 #include "util-ebpf.h"
 #include <bpf/libbpf.h>
@@ -948,11 +952,10 @@ static int AFPReadFromRing(AFPThreadVars *ptv)
         }
 
         /* get vlan id from header */
-        if ((!(ptv->flags & AFP_VLAN_DISABLED)) &&
+        if ((ptv->flags & AFP_VLAN_IN_HEADER) &&
             (h.h2->tp_status & TP_STATUS_VLAN_VALID || h.h2->tp_vlan_tci)) {
             p->vlan_id[0] = h.h2->tp_vlan_tci & 0x0fff;
             p->vlan_idx = 1;
-            p->vlanh[0] = NULL;
         }
 
         if (ptv->flags & AFP_ZERO_COPY) {
@@ -1072,11 +1075,10 @@ static inline int AFPParsePacketV3(AFPThreadVars *ptv, struct tpacket_block_desc
     p->livedev = ptv->livedev;
     p->datalink = ptv->datalink;
 
-    if ((!(ptv->flags & AFP_VLAN_DISABLED)) &&
+    if ((ptv->flags & AFP_VLAN_IN_HEADER) &&
             (ppd->tp_status & TP_STATUS_VLAN_VALID || ppd->hv1.tp_vlan_tci)) {
         p->vlan_id[0] = ppd->hv1.tp_vlan_tci & 0x0fff;
         p->vlan_idx = 1;
-        p->vlanh[0] = NULL;
     }
 
     if (ptv->flags & AFP_ZERO_COPY) {
@@ -1993,7 +1995,7 @@ mmap_err:
 /** \brief test if we can use FANOUT. Older kernels like those in
  *         CentOS6 have HAVE_PACKET_FANOUT defined but fail to work
  */
-int AFPIsFanoutSupported(void)
+int AFPIsFanoutSupported(int cluster_id)
 {
 #ifdef HAVE_PACKET_FANOUT
     int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
@@ -2007,7 +2009,8 @@ int AFPIsFanoutSupported(void)
     close(fd);
 
     if (r < 0) {
-        SCLogPerf("fanout not supported by kernel: %s", strerror(errno));
+        SCLogError(SC_ERR_INVALID_VALUE, "fanout not supported by kernel: "
+                "Kernel too old or cluster-id %d already in use.", cluster_id);
         return 0;
     }
     return 1;
@@ -2809,19 +2812,11 @@ TmEcode ReceiveAFPThreadInit(ThreadVars *tv, const void *initdata, void **data)
 
     afpconfig->DerefFunc(afpconfig);
 
-    /* A bit strange to have this here but we only have vlan information
-     * during reading so we need to know if we want to keep vlan during
-     * the capture phase */
-    int vlanbool = 0;
-    if ((ConfGetBool("vlan.use-for-tracking", &vlanbool)) == 1 && vlanbool == 0) {
-        ptv->flags |= AFP_VLAN_DISABLED;
-    }
-
     /* If kernel is older than 3.0, VLAN is not stripped so we don't
      * get the info from packet extended header but we will use a standard
      * parsing of packet data (See Linux commit bcc6d47903612c3861201cc3a866fb604f26b8b2) */
-    if (! SCKernelVersionIsAtLeast(3, 0)) {
-        ptv->flags |= AFP_VLAN_DISABLED;
+    if (SCKernelVersionIsAtLeast(3, 0)) {
+        ptv->flags |= AFP_VLAN_IN_HEADER;
     }
 
     SCReturnInt(TM_ECODE_OK);

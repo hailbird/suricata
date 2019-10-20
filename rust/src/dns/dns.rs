@@ -20,10 +20,10 @@ extern crate nom;
 use std;
 use std::mem::transmute;
 
-use log::*;
-use applayer::LoggerFlags;
-use core;
-use dns::parser;
+use crate::log::*;
+use crate::applayer::LoggerFlags;
+use crate::core;
+use crate::dns::parser;
 
 /// DNS record types.
 pub const DNS_RECORD_TYPE_A           : u16 = 1;
@@ -431,7 +431,8 @@ impl DNSState {
     /// Returns the number of messages parsed.
     pub fn parse_request_tcp(&mut self, input: &[u8]) -> i8 {
         if self.gap {
-            if probe_tcp(input) {
+            let (is_dns, _) = probe_tcp(input);
+            if is_dns {
                 self.gap = false;
             } else {
                 return 0
@@ -471,7 +472,8 @@ impl DNSState {
     /// Returns the number of messages parsed.
     pub fn parse_response_tcp(&mut self, input: &[u8]) -> i8 {
         if self.gap {
-            if probe_tcp(input) {
+            let (is_dns, _) = probe_tcp(input);
+            if is_dns {
                 self.gap = false;
             } else {
                 return 0
@@ -519,19 +521,25 @@ impl DNSState {
 }
 
 /// Probe input to see if it looks like DNS.
-fn probe(input: &[u8]) -> bool {
-    parser::dns_parse_request(input).is_ok()
+fn probe(input: &[u8]) -> (bool, bool) {
+    match parser::dns_parse_request(input) {
+        Ok((_, request)) => {
+            let is_request = request.header.flags & 0x8000 == 0;
+            return (true, is_request);
+        },
+        Err(_) => (false, false),
+    }
 }
 
 /// Probe TCP input to see if it looks like DNS.
-pub fn probe_tcp(input: &[u8]) -> bool {
+pub fn probe_tcp(input: &[u8]) -> (bool, bool) {
     match nom::be_u16(input) {
         Ok((rem, _)) => {
             return probe(rem);
         },
         _ => {}
     }
-    return false;
+    return (false, false);
 }
 
 /// Returns *mut DNSState
@@ -570,7 +578,7 @@ pub extern "C" fn rs_dns_state_tx_free(state: &mut DNSState,
 pub extern "C" fn rs_dns_parse_request(_flow: *mut core::Flow,
                                        state: &mut DNSState,
                                        _pstate: *mut std::os::raw::c_void,
-                                       input: *mut u8,
+                                       input: *const u8,
                                        input_len: u32,
                                        _data: *mut std::os::raw::c_void)
                                        -> i8 {
@@ -586,7 +594,7 @@ pub extern "C" fn rs_dns_parse_request(_flow: *mut core::Flow,
 pub extern "C" fn rs_dns_parse_response(_flow: *mut core::Flow,
                                         state: &mut DNSState,
                                         _pstate: *mut std::os::raw::c_void,
-                                        input: *mut u8,
+                                        input: *const u8,
                                         input_len: u32,
                                         _data: *mut std::os::raw::c_void)
                                         -> i8 {
@@ -603,7 +611,7 @@ pub extern "C" fn rs_dns_parse_response(_flow: *mut core::Flow,
 pub extern "C" fn rs_dns_parse_request_tcp(_flow: *mut core::Flow,
                                            state: &mut DNSState,
                                            _pstate: *mut std::os::raw::c_void,
-                                           input: *mut u8,
+                                           input: *const u8,
                                            input_len: u32,
                                            _data: *mut std::os::raw::c_void)
                                            -> i8 {
@@ -622,7 +630,7 @@ pub extern "C" fn rs_dns_parse_request_tcp(_flow: *mut core::Flow,
 pub extern "C" fn rs_dns_parse_response_tcp(_flow: *mut core::Flow,
                                             state: &mut DNSState,
                                             _pstate: *mut std::os::raw::c_void,
-                                            input: *mut u8,
+                                            input: *const u8,
                                             input_len: u32,
                                             _data: *mut std::os::raw::c_void)
                                             -> i8 {
@@ -813,27 +821,46 @@ pub extern "C" fn rs_dns_tx_get_query_rrtype(tx: &mut DNSTransaction,
 }
 
 #[no_mangle]
-pub extern "C" fn rs_dns_probe(input: *const u8, len: u32)
+pub extern "C" fn rs_dns_probe(input: *const u8, len: u32, rdir: *mut u8)
                                -> u8
 {
     let slice: &[u8] = unsafe {
         std::slice::from_raw_parts(input as *mut u8, len as usize)
     };
-    if probe(slice) {
+    let (is_dns, is_request) = probe(slice);
+    if is_dns {
+        let dir = if is_request {
+            core::STREAM_TOSERVER
+        } else {
+            core::STREAM_TOCLIENT
+        };
+        unsafe { *rdir = dir };
+
         return 1;
     }
     return 0;
 }
 
 #[no_mangle]
-pub extern "C" fn rs_dns_probe_tcp(input: *const u8,
-                                   len: u32)
+pub extern "C" fn rs_dns_probe_tcp(direction: u8,
+                                   input: *const u8,
+                                   len: u32,
+                                   rdir: *mut u8)
                                    -> u8
 {
     let slice: &[u8] = unsafe {
         std::slice::from_raw_parts(input as *mut u8, len as usize)
     };
-    if probe_tcp(slice) {
+    let (is_dns, is_request) = probe_tcp(slice);
+    if is_dns {
+        let dir = if is_request {
+            core::STREAM_TOSERVER
+        } else {
+            core::STREAM_TOCLIENT
+        };
+        if direction & (core::STREAM_TOSERVER|core::STREAM_TOCLIENT) != dir {
+            unsafe { *rdir = dir };
+        }
         return 1;
     }
     return 0;
@@ -842,7 +869,7 @@ pub extern "C" fn rs_dns_probe_tcp(input: *const u8,
 #[cfg(test)]
 mod tests {
 
-    use dns::dns::DNSState;
+    use crate::dns::dns::DNSState;
 
     #[test]
     fn test_dns_parse_request_tcp_valid() {

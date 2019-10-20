@@ -47,9 +47,6 @@
 #include "app-layer-snmp.h"
 #include "output-json-snmp.h"
 
-#ifdef HAVE_RUST
-#ifdef HAVE_LIBJANSSON
-
 #include "rust.h"
 #include "rust-snmp-log-gen.h"
 
@@ -131,8 +128,6 @@ static OutputInitResult OutputSNMPLogInitSub(ConfNode *conf,
     return result;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
-
 static TmEcode JsonSNMPLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     LogSNMPLogThread *thread = SCCalloc(1, sizeof(*thread));
@@ -146,7 +141,7 @@ static TmEcode JsonSNMPLogThreadInit(ThreadVars *t, const void *initdata, void *
         return TM_ECODE_FAILED;
     }
 
-    thread->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    thread->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (unlikely(thread->buffer == NULL)) {
         SCFree(thread);
         return TM_ECODE_FAILED;
@@ -181,18 +176,3 @@ void JsonSNMPLogRegister(void)
 
     SCLogDebug("SNMP JSON logger registered.");
 }
-
-#else /* No JSON support. */
-
-void JsonSNMPLogRegister(void)
-{
-}
-
-#endif /* HAVE_LIBJANSSON */
-#else /* No rust support. */
-
-void JsonSNMPLogRegister(void)
-{
-}
-
-#endif /* HAVE_RUST */

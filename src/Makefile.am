@@ -21,9 +21,7 @@ app-layer-dnp3.c app-layer-dnp3.h \
 app-layer-dnp3-objects.c app-layer-dnp3-objects.h \
 app-layer-dns-common.c app-layer-dns-common.h \
 app-layer-dns-tcp.c app-layer-dns-tcp.h \
-app-layer-dns-tcp-rust.c app-layer-dns-tcp-rust.h \
 app-layer-dns-udp.c app-layer-dns-udp.h \
-app-layer-dns-udp-rust.c app-layer-dns-udp-rust.h \
 app-layer-enip.c app-layer-enip.h \
 app-layer-enip-common.c app-layer-enip-common.h \
 app-layer-events.c app-layer-events.h \
@@ -51,11 +49,17 @@ app-layer-krb5.c app-layer-krb5.h \
 app-layer-dhcp.c app-layer-dhcp.h \
 app-layer-template.c app-layer-template.h \
 app-layer-template-rust.c app-layer-template-rust.h \
+app-layer-rdp.c app-layer-rdp.h \
 app-layer-ssh.c app-layer-ssh.h \
 app-layer-ssl.c app-layer-ssl.h \
+app-layer-sip.c app-layer-sip.h \
 conf.c conf.h \
 conf-yaml-loader.c conf-yaml-loader.h \
 counters.c counters.h \
+datasets.c datasets.h datasets-reputation.h \
+datasets-string.c datasets-string.h \
+datasets-sha256.c datasets-sha256.h \
+datasets-md5.c datasets-md5.h \
 decode.c decode.h \
 decode-afl.c \
 decode-erspan.c decode-erspan.h \
@@ -98,6 +102,8 @@ detect.c detect.h \
 detect-classtype.c detect-classtype.h \
 detect-content.c detect-content.h \
 detect-csum.c detect-csum.h \
+detect-datarep.c detect-datarep.h \
+detect-dataset.c detect-dataset.h \
 detect-dce-iface.c detect-dce-iface.h \
 detect-dce-opnum.c detect-dce-opnum.h \
 detect-dce-stub-data.c detect-dce-stub-data.h \
@@ -105,6 +111,7 @@ detect-depth.c detect-depth.h \
 detect-detection-filter.c detect-detection-filter.h \
 detect-distance.c detect-distance.h \
 detect-dnp3.c detect-dnp3.h \
+detect-dns-opcode.c detect-dns-opcode.h \
 detect-dns-query.c detect-dns-query.h \
 detect-tls-ja3-hash.c detect-tls-ja3-hash.h \
 detect-tls-ja3-string.c detect-tls-ja3-string.h \
@@ -236,6 +243,13 @@ detect-sid.c detect-sid.h \
 detect-snmp-community.c detect-snmp-community.h \
 detect-snmp-pdu_type.c detect-snmp-pdu_type.h \
 detect-snmp-version.c detect-snmp-version.h \
+detect-sip-method.c detect-sip-method.h \
+detect-sip-uri.c detect-sip-uri.h \
+detect-sip-protocol.c detect-sip-protocol.h \
+detect-sip-stat-code.c detect-sip-stat-code.h \
+detect-sip-stat-msg.c detect-sip-stat-msg.h \
+detect-sip-request-line.c detect-sip-request-line.h \
+detect-sip-response-line.c detect-sip-response-line.h \
 detect-ssh-proto.c detect-ssh-proto.h \
 detect-ssh-proto-version.c detect-ssh-proto-version.h \
 detect-ssh-software.c detect-ssh-software.h \
@@ -268,6 +282,7 @@ detect-transform-strip-whitespace.c detect-transform-strip-whitespace.h \
 detect-transform-md5.c detect-transform-md5.h \
 detect-transform-sha1.c detect-transform-sha1.h \
 detect-transform-sha256.c detect-transform-sha256.h \
+detect-transform-dotprefix.c detect-transform-dotprefix.h \
 detect-ttl.c detect-ttl.h \
 detect-uricontent.c detect-uricontent.h \
 detect-urilen.c detect-urilen.h \
@@ -320,8 +335,10 @@ output-json-drop.c output-json-drop.h \
 output-json-email-common.c output-json-email-common.h \
 output-json-file.c output-json-file.h \
 output-json-flow.c output-json-flow.h \
+output-json-ftp.c output-json-ftp.h \
 output-json-netflow.c output-json-netflow.h \
 output-json-http.c output-json-http.h \
+output-json-sip.c output-json-sip.h \
 output-json-smtp.c output-json-smtp.h \
 output-json-ssh.c output-json-ssh.h \
 output-json-stats.c output-json-stats.h \
@@ -335,6 +352,7 @@ output-json-dhcp.c output-json-dhcp.h \
 output-json-snmp.c output-json-snmp.h \
 output-json-template.c output-json-template.h \
 output-json-template-rust.c output-json-template-rust.h \
+output-json-rdp.c output-json-rdp.h \
 output-json-metadata.c output-json-metadata.h \
 output-lua.c output-lua.h \
 output-packet.c output-packet.h \
@@ -500,6 +518,7 @@ util-strlcatu.c \
 util-strlcpyu.c \
 util-strptime.c \
 util-syslog.c util-syslog.h \
+util-thash.c util-thash.h \
 util-threshold-config.c util-threshold-config.h \
 util-time.c util-time.h \
 util-unittest.c util-unittest.h \
@@ -521,10 +540,7 @@ AM_CPPFLAGS = $(all_includes)
 # the library search path.
 suricata_LDFLAGS = $(all_libraries) ${SECLDFLAGS}
 suricata_LDADD = $(HTP_LDADD) $(RUST_LDADD)
-
-if HAVE_RUST
 suricata_DEPENDENCIES = $(RUST_SURICATA_LIB)
-endif
 
 # default CFLAGS
 AM_CFLAGS = ${OPTIMIZATION_CFLAGS} ${GCC_CFLAGS} ${CLANG_CFLAGS}            \

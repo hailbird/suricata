@@ -34,23 +34,23 @@ use std::collections::HashMap;
 
 use nom;
 
-use core::*;
-use log::*;
-use applayer;
-use applayer::LoggerFlags;
+use crate::core::*;
+use crate::log::*;
+use crate::applayer;
+use crate::applayer::LoggerFlags;
 
-use smb::nbss_records::*;
-use smb::smb1_records::*;
-use smb::smb2_records::*;
+use crate::smb::nbss_records::*;
+use crate::smb::smb1_records::*;
+use crate::smb::smb2_records::*;
 
-use smb::smb1::*;
-use smb::smb2::*;
-use smb::smb3::*;
-use smb::dcerpc::*;
-use smb::session::*;
-use smb::events::*;
-use smb::files::*;
-use smb::smb2_ioctl::*;
+use crate::smb::smb1::*;
+use crate::smb::smb2::*;
+use crate::smb::smb3::*;
+use crate::smb::dcerpc::*;
+use crate::smb::session::*;
+use crate::smb::events::*;
+use crate::smb::files::*;
+use crate::smb::smb2_ioctl::*;
 
 pub static mut SURICATA_SMB_FILE_CONFIG: Option<&'static SuricataFileContext> = None;
 
@@ -1796,7 +1796,7 @@ pub extern "C" fn rs_smb_state_free(state: *mut std::os::raw::c_void) {
 pub extern "C" fn rs_smb_parse_request_tcp(_flow: *mut Flow,
                                        state: &mut SMBState,
                                        _pstate: *mut std::os::raw::c_void,
-                                       input: *mut u8,
+                                       input: *const u8,
                                        input_len: u32,
                                        _data: *mut std::os::raw::c_void,
                                        flags: u8)
@@ -1834,7 +1834,7 @@ pub extern "C" fn rs_smb_parse_request_tcp_gap(
 pub extern "C" fn rs_smb_parse_response_tcp(_flow: *mut Flow,
                                         state: &mut SMBState,
                                         _pstate: *mut std::os::raw::c_void,
-                                        input: *mut u8,
+                                        input: *const u8,
                                         input_len: u32,
                                         _data: *mut std::os::raw::c_void,
                                         flags: u8)

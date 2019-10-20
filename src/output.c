@@ -68,14 +68,17 @@
 #include "log-stats.h"
 #include "output-json.h"
 #include "output-json-nfs.h"
+#include "output-json-ftp.h"
 #include "output-json-tftp.h"
 #include "output-json-smb.h"
 #include "output-json-ikev2.h"
 #include "output-json-krb5.h"
 #include "output-json-dhcp.h"
 #include "output-json-snmp.h"
+#include "output-json-sip.h"
 #include "output-json-template.h"
 #include "output-json-template-rust.h"
+#include "output-json-rdp.h"
 #include "output-lua.h"
 #include "output-json-dnp3.h"
 #include "output-json-metadata.h"
@@ -1096,6 +1099,8 @@ void OutputRegisterLoggers(void)
     JsonNFSLogRegister();
     /* TFTP JSON logger. */
     JsonTFTPLogRegister();
+    /* FTP JSON logger. */
+    JsonFTPLogRegister();
     /* SMB JSON logger. */
     JsonSMBLogRegister();
     /* IKEv2 JSON logger. */
@@ -1106,8 +1111,12 @@ void OutputRegisterLoggers(void)
     JsonDHCPLogRegister();
     /* SNMP JSON logger. */
     JsonSNMPLogRegister();
+    /* SIP JSON logger. */
+    JsonSIPLogRegister();
     /* Template JSON logger. */
     JsonTemplateLogRegister();
     /* Template Rust JSON logger. */
     JsonTemplateRustLogRegister();
+    /* RDP JSON logger. */
+    JsonRdpLogRegister();
 }

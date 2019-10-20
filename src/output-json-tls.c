@@ -51,14 +51,10 @@
 #include "output-json.h"
 #include "output-json-tls.h"
 
-#ifdef HAVE_LIBJANSSON
-
 SC_ATOMIC_DECLARE(unsigned int, cert_id);
 
 #define MODULE_NAME "LogTlsLog"
 #define DEFAULT_LOG_FILENAME "tls.json"
-
-#define OUTPUT_BUFFER_SIZE 65535
 
 #define LOG_TLS_DEFAULT                 0
 #define LOG_TLS_EXTENDED                (1 << 0)
@@ -478,7 +474,7 @@ static TmEcode JsonTlsLogThreadInit(ThreadVars *t, const void *initdata, void **
     /* use the Output Context (file pointer and mutex) */
     aft->tlslog_ctx = ((OutputCtx *)initdata)->data;
 
-    aft->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    aft->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (aft->buffer == NULL) {
         SCFree(aft);
         return TM_ECODE_FAILED;
@@ -667,12 +663,3 @@ void JsonTlsLogRegister (void)
         JsonTlsLogger, TLS_HANDSHAKE_DONE, TLS_HANDSHAKE_DONE,
         JsonTlsLogThreadInit, JsonTlsLogThreadDeinit, NULL);
 }
-
-#else
-
-void JsonTlsLogRegister (void)
-{
-}
-
-#endif /* HAVE_LIBJANSSON */
-

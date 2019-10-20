@@ -48,12 +48,8 @@
 #include "app-layer-tftp.h"
 #include "output-json-tftp.h"
 
-#ifdef HAVE_RUST
-
 #include "rust.h"
 #include "rust-tftp-log-gen.h"
-
-#ifdef HAVE_LIBJANSSON
 
 typedef struct LogTFTPFileCtx_ {
     LogFileCtx *file_ctx;
@@ -130,8 +126,6 @@ static OutputInitResult OutputTFTPLogInitSub(ConfNode *conf,
     return result;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
-
 static TmEcode JsonTFTPLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     LogTFTPLogThread *thread = SCCalloc(1, sizeof(*thread));
@@ -145,7 +139,7 @@ static TmEcode JsonTFTPLogThreadInit(ThreadVars *t, const void *initdata, void *
         return TM_ECODE_FAILED;
     }
 
-    thread->buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    thread->buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (unlikely(thread->buffer == NULL)) {
         SCFree(thread);
         return TM_ECODE_FAILED;
@@ -181,18 +175,3 @@ void JsonTFTPLogRegister(void)
 
     SCLogDebug("TFTP JSON logger registered.");
 }
-#else /* HAVE_RUST */
-
-void JsonTFTPLogRegister(void)
-{
-}
-
-#endif /* HAVE_RUST */
-
-#else /* HAVE_LIBJANSSON */
-
-void JsonTFTPLogRegister(void)
-{
-}
-
-#endif /* HAVE_LIBJANSSON */

@@ -504,7 +504,7 @@ int StreamTcpReassembleDepthReached(Packet *p)
 /**
  *  \internal
  *  \brief Function to Check the reassembly depth valuer against the
- *        allowed max depth of the stream reassmbly for TCP streams.
+ *        allowed max depth of the stream reassembly for TCP streams.
  *
  *  \param stream stream direction
  *  \param seq sequence number where "size" starts
@@ -988,38 +988,40 @@ static inline bool CheckGap(TcpSession *ssn, TcpStream *stream, Packet *p)
 
 /** \internal
  *  \brief get stream buffer and update the app-layer
+ *  \param stream pointer to pointer as app-layer can switch flow dir
  *  \retval 0 success
  */
 static int ReassembleUpdateAppLayer (ThreadVars *tv,
         TcpReassemblyThreadCtx *ra_ctx,
-        TcpSession *ssn, TcpStream *stream,
+        TcpSession *ssn, TcpStream **stream,
         Packet *p, enum StreamUpdateDir dir)
 {
-    uint64_t app_progress = STREAM_APP_PROGRESS(stream);
+    uint64_t app_progress = STREAM_APP_PROGRESS(*stream);
 
     SCLogDebug("app progress %"PRIu64, app_progress);
-    SCLogDebug("last_ack %u, base_seq %u", stream->last_ack, stream->base_seq);
+    SCLogDebug("last_ack %u, base_seq %u", (*stream)->last_ack, (*stream)->base_seq);
 
     const uint8_t *mydata;
     uint32_t mydata_len;
 
     while (1) {
-        GetAppBuffer(stream, &mydata, &mydata_len, app_progress);
-        if (mydata == NULL && mydata_len > 0 && CheckGap(ssn, stream, p)) {
+        GetAppBuffer(*stream, &mydata, &mydata_len, app_progress);
+        if (mydata == NULL && mydata_len > 0 && CheckGap(ssn, *stream, p)) {
             SCLogDebug("sending GAP to app-layer (size: %u)", mydata_len);
 
             int r = AppLayerHandleTCPData(tv, ra_ctx, p, p->flow, ssn, stream,
                     NULL, mydata_len,
-                    StreamGetAppLayerFlags(ssn, stream, p, dir)|STREAM_GAP);
+                    StreamGetAppLayerFlags(ssn, *stream, p, dir)|STREAM_GAP);
             AppLayerProfilingStore(ra_ctx->app_tctx, p);
 
             StreamTcpSetEvent(p, STREAM_REASSEMBLY_SEQ_GAP);
             StatsIncr(tv, ra_ctx->counter_tcp_reass_gap);
 
-            stream->app_progress_rel += mydata_len;
-            app_progress += mydata_len;
+            /* AppLayerHandleTCPData has likely updated progress. */
+            app_progress = STREAM_APP_PROGRESS(*stream);
+
             if (r < 0)
-                break;
+                return 0;
 
             continue;
         } else if (mydata == NULL || mydata_len == 0) {
@@ -1033,7 +1035,7 @@ static int ReassembleUpdateAppLayer (ThreadVars *tv,
     //PrintRawDataFp(stdout, mydata, mydata_len);
 
     SCLogDebug("stream %p data in buffer %p of len %u and offset %"PRIu64,
-            stream, &stream->sb, mydata_len, app_progress);
+            *stream, &(*stream)->sb, mydata_len, app_progress);
 
     /* get window of data that is acked */
     if (StreamTcpInlineMode() == FALSE) {
@@ -1041,10 +1043,10 @@ static int ReassembleUpdateAppLayer (ThreadVars *tv,
             // fall through, we use all available data
         } else {
             uint64_t last_ack_abs = app_progress; /* absolute right edge of ack'd data */
-            if (STREAM_LASTACK_GT_BASESEQ(stream)) {
+            if (STREAM_LASTACK_GT_BASESEQ(*stream)) {
                 /* get window of data that is acked */
-                uint32_t delta = stream->last_ack - stream->base_seq;
-                DEBUG_VALIDATE_BUG_ON(delta > 10000000ULL && delta > stream->window);
+                uint32_t delta = (*stream)->last_ack - (*stream)->base_seq;
+                DEBUG_VALIDATE_BUG_ON(delta > 10000000ULL && delta > (*stream)->window);
                 /* get max absolute offset */
                 last_ack_abs += delta;
             }
@@ -1061,23 +1063,10 @@ static int ReassembleUpdateAppLayer (ThreadVars *tv,
     }
 
     /* update the app-layer */
-    int r = AppLayerHandleTCPData(tv, ra_ctx, p, p->flow, ssn, stream,
+    (void)AppLayerHandleTCPData(tv, ra_ctx, p, p->flow, ssn, stream,
             (uint8_t *)mydata, mydata_len,
-            StreamGetAppLayerFlags(ssn, stream, p, dir));
+            StreamGetAppLayerFlags(ssn, *stream, p, dir));
     AppLayerProfilingStore(ra_ctx->app_tctx, p);
-
-    /* see if we can update the progress */
-    if (r == 0 && mydata_len > 0 &&
-            StreamTcpIsSetStreamFlagAppProtoDetectionCompleted(stream))
-    {
-        SCLogDebug("app progress %"PRIu64" increasing with data len %u to %"PRIu64,
-                app_progress, mydata_len, app_progress + mydata_len);
-
-        stream->app_progress_rel += mydata_len;
-        SCLogDebug("app progress now %"PRIu64, STREAM_APP_PROGRESS(stream));
-    } else {
-        SCLogDebug("NOT UPDATED app progress still %"PRIu64, app_progress);
-    }
 
     SCReturnInt(0);
 }
@@ -1121,7 +1110,7 @@ int StreamTcpReassembleAppLayer (ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
         if (ssn->state >= TCP_CLOSING || (p->flags & PKT_PSEUDO_STREAM_END)) {
             SCLogDebug("sending empty eof message");
             /* send EOF to app layer */
-            AppLayerHandleTCPData(tv, ra_ctx, p, p->flow, ssn, stream,
+            AppLayerHandleTCPData(tv, ra_ctx, p, p->flow, ssn, &stream,
                                   NULL, 0,
                                   StreamGetAppLayerFlags(ssn, stream, p, dir));
             AppLayerProfilingStore(ra_ctx->app_tctx, p);
@@ -1131,7 +1120,7 @@ int StreamTcpReassembleAppLayer (ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
     }
 
     /* with all that out of the way, lets update the app-layer */
-    return ReassembleUpdateAppLayer(tv, ra_ctx, ssn, stream, p, dir);
+    return ReassembleUpdateAppLayer(tv, ra_ctx, ssn, &stream, p, dir);
 }
 
 /** \internal
@@ -1432,7 +1421,7 @@ static int StreamReassembleRawInline(TcpSession *ssn, const Packet *p,
                     // more trailing data than we need
 
                     if (before >= (chunk_size - p->payload_len) / 2) {
-                        // also more heading data, devide evenly
+                        // also more heading data, divide evenly
                         before = after = (chunk_size - p->payload_len) / 2;
                     } else {
                         // heading data is less than requested, give the
@@ -1545,6 +1534,12 @@ static int StreamReassembleRawDo(TcpSession *ssn, TcpStream *stream,
      * use a minimal inspect depth, we actually take the app progress
      * as that is the right edge of the data. Then we take the window
      * of 'min_inspect_depth' before that. */
+
+    SCLogDebug("respect_inspect_depth %s STREAMTCP_STREAM_FLAG_TRIGGER_RAW %s stream->min_inspect_depth %u",
+            respect_inspect_depth ? "true" : "false",
+            (stream->flags & STREAMTCP_STREAM_FLAG_TRIGGER_RAW) ? "true" : "false",
+            stream->min_inspect_depth);
+
     if (respect_inspect_depth &&
         (stream->flags & STREAMTCP_STREAM_FLAG_TRIGGER_RAW)
         && stream->min_inspect_depth)
@@ -1555,9 +1550,11 @@ static int StreamReassembleRawDo(TcpSession *ssn, TcpStream *stream,
         } else {
             progress -= stream->min_inspect_depth;
         }
-        SCLogDebug("applied min inspect depth due to STREAMTCP_STREAM_FLAG_TRIGGER_RAW: progress %"PRIu64, progress);
 
         SCLogDebug("stream app %"PRIu64", raw %"PRIu64, STREAM_APP_PROGRESS(stream), STREAM_RAW_PROGRESS(stream));
+
+        progress = MIN(progress, STREAM_RAW_PROGRESS(stream));
+        SCLogDebug("applied min inspect depth due to STREAMTCP_STREAM_FLAG_TRIGGER_RAW: progress %"PRIu64, progress);
     }
 
     SCLogDebug("progress %"PRIu64", min inspect depth %u %s", progress, stream->min_inspect_depth, stream->flags & STREAMTCP_STREAM_FLAG_TRIGGER_RAW ? "STREAMTCP_STREAM_FLAG_TRIGGER_RAW":"(no trigger)");
@@ -1651,7 +1648,7 @@ int StreamReassembleRaw(TcpSession *ssn, const Packet *p,
                         StreamReassembleRawFunc Callback, void *cb_data,
                         uint64_t *progress_out, bool respect_inspect_depth)
 {
-    /* handle inline seperately as the logic is very different */
+    /* handle inline separately as the logic is very different */
     if (StreamTcpInlineMode() == TRUE) {
         return StreamReassembleRawInline(ssn, p, Callback, cb_data, progress_out);
     }

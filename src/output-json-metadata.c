@@ -65,8 +65,6 @@
 
 #define MODULE_NAME "JsonMetadataLog"
 
-#ifdef HAVE_LIBJANSSON
-
 #define JSON_STREAM_BUFFER_SIZE 4096
 
 typedef struct MetadataJsonOutputCtx_ {
@@ -111,7 +109,6 @@ static int JsonMetadataLogCondition(ThreadVars *tv, const Packet *p)
     return FALSE;
 }
 
-#define OUTPUT_BUFFER_SIZE 65535
 static TmEcode JsonMetadataLogThreadInit(ThreadVars *t, const void *initdata, void **data)
 {
     JsonMetadataLogThread *aft = SCMalloc(sizeof(JsonMetadataLogThread));
@@ -125,7 +122,7 @@ static TmEcode JsonMetadataLogThreadInit(ThreadVars *t, const void *initdata, vo
         return TM_ECODE_FAILED;
     }
 
-    aft->json_buffer = MemBufferCreateNew(OUTPUT_BUFFER_SIZE);
+    aft->json_buffer = MemBufferCreateNew(JSON_OUTPUT_BUFFER_SIZE);
     if (aft->json_buffer == NULL) {
         SCFree(aft);
         return TM_ECODE_FAILED;
@@ -290,11 +287,3 @@ void JsonMetadataLogRegister (void)
         JsonMetadataLogCondition, JsonMetadataLogThreadInit,
         JsonMetadataLogThreadDeinit, NULL);
 }
-
-#else
-
-void JsonMetadataLogRegister (void)
-{
-}
-
-#endif

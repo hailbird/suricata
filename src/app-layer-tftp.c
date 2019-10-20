@@ -84,7 +84,7 @@ static AppLayerDecoderEvents *TFTPGetEvents(void *tx)
  *     ALPROTO_UNKNOWN.
  */
 static AppProto TFTPProbingParser(Flow *f, uint8_t direction,
-        uint8_t *input, uint32_t input_len, uint8_t *rdir)
+        const uint8_t *input, uint32_t input_len, uint8_t *rdir)
 {
     /* Very simple test - if there is input, this is tftp.
      * Also check if it's starting by a zero */
@@ -98,7 +98,7 @@ static AppProto TFTPProbingParser(Flow *f, uint8_t direction,
 }
 
 static int TFTPParseRequest(Flow *f, void *state,
-    AppLayerParserState *pstate, uint8_t *input, uint32_t input_len,
+    AppLayerParserState *pstate, const uint8_t *input, uint32_t input_len,
     void *local_data, const uint8_t flags)
 {
     SCLogDebug("Parsing echo request: len=%"PRIu32, input_len);
@@ -122,7 +122,7 @@ static int TFTPParseRequest(Flow *f, void *state,
  * \brief Response parsing is not implemented
  */
 static int TFTPParseResponse(Flow *f, void *state, AppLayerParserState *pstate,
-    uint8_t *input, uint32_t input_len, void *local_data,
+    const uint8_t *input, uint32_t input_len, void *local_data,
     const uint8_t flags)
 {
     return 0;
@@ -203,12 +203,12 @@ void RegisterTFTPParsers(void)
             AppLayerProtoDetectPPRegister(IPPROTO_UDP, TFTP_DEFAULT_PORT,
                                           ALPROTO_TFTP, 0, TFTP_MIN_FRAME_LEN,
                                           STREAM_TOSERVER, TFTPProbingParser,
-                                          NULL);
+                                          TFTPProbingParser);
         } else {
             if (!AppLayerProtoDetectPPParseConfPorts("udp", IPPROTO_UDP,
                                                      proto_name, ALPROTO_TFTP,
                                                      0, TFTP_MIN_FRAME_LEN,
-                                                     TFTPProbingParser, NULL)) {
+                                                     TFTPProbingParser, TFTPProbingParser)) {
                 SCLogDebug("No echo app-layer configuration, enabling echo"
                            " detection UDP detection on port %s.",
                            TFTP_DEFAULT_PORT);
@@ -216,7 +216,7 @@ void RegisterTFTPParsers(void)
                                               TFTP_DEFAULT_PORT, ALPROTO_TFTP,
                                               0, TFTP_MIN_FRAME_LEN,
                                               STREAM_TOSERVER,TFTPProbingParser,
-                                              NULL);
+                                              TFTPProbingParser);
             }
         }
     } else {

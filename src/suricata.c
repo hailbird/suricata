@@ -73,6 +73,8 @@
 #include "conf.h"
 #include "conf-yaml-loader.h"
 
+#include "datasets.h"
+
 #include "stream-tcp.h"
 
 #include "source-nfq.h"
@@ -174,10 +176,8 @@
 
 #include "util-lua.h"
 
-#ifdef HAVE_RUST
 #include "rust.h"
 #include "rust-core-gen.h"
-#endif
 
 /*
  * we put this here, because we only use it here in main.
@@ -223,12 +223,18 @@ int sc_set_caps = FALSE;
 /** highest mtu of the interfaces we monitor */
 int g_default_mtu = 0;
 
+bool g_system = false;
+
 /** disable randomness to get reproducible results accross runs */
 #ifndef AFLFUZZ_NO_RANDOM
 int g_disable_randomness = 0;
 #else
 int g_disable_randomness = 1;
 #endif
+
+/** determine (without branching) if we include the vlan_ids when hashing or
+  * comparing flows */
+uint16_t g_vlan_mask = 0xffff;
 
 /** Suricata instance */
 SCInstance suricata;
@@ -367,7 +373,8 @@ static void GlobalsDestroy(SCInstance *suri)
     DetectEnginePruneFreeList();
 
     AppLayerDeSetup();
-
+    DatasetsSave();
+    DatasetsDestroy();
     TagDestroyCtx();
 
     LiveDeviceListClean();
@@ -385,8 +392,10 @@ static void GlobalsDestroy(SCInstance *suri)
     TmModuleRunDeInit();
     ParseSizeDeinit();
 #ifdef HAVE_NSS
-    NSS_Shutdown();
-    PR_Cleanup();
+    if (NSS_IsInitialized()) {
+        NSS_Shutdown();
+        PR_Cleanup();
+    }
 #endif
 
 #ifdef HAVE_AF_PACKET
@@ -577,7 +586,7 @@ static void SetBpfStringFromFile(char *filename)
 static void PrintUsage(const char *progname)
 {
 #ifdef REVISION
-    printf("%s %s (rev %s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
+    printf("%s %s (%s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
 #else
     printf("%s %s\n", PROG_NAME, PROG_VER);
 #endif
@@ -605,7 +614,7 @@ static void PrintUsage(const char *progname)
 #endif /* OS_WIN32 */
     printf("\t-k [all|none]                        : force checksum check (all) or disabled it (none)\n");
     printf("\t-V                                   : display Suricata version\n");
-    printf("\t-v[v]                                : increase default Suricata verbosity\n");
+    printf("\t-v                                   : be more verbose (use multiple times to increase verbosity)\n");
 #ifdef UNITTESTS
     printf("\t-u                                   : run the unittests and exit\n");
     printf("\t-U, --unittest-filter=REGEX          : filter unittests with a regex\n");
@@ -680,7 +689,7 @@ static void PrintBuildInfo(void)
     const char *tls = "pthread key";
 
 #ifdef REVISION
-    printf("This is %s version %s (rev %s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
+    printf("This is %s version %s (%s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
 #elif defined RELEASE
     printf("This is %s version %s RELEASE\n", PROG_NAME, PROG_VER);
 #else
@@ -741,9 +750,7 @@ static void PrintBuildInfo(void)
 #ifdef HAVE_LUAJIT
     strlcat(features, "HAVE_LUAJIT ", sizeof(features));
 #endif
-#ifdef HAVE_LIBJANSSON
     strlcat(features, "HAVE_LIBJANSSON ", sizeof(features));
-#endif
 #ifdef PROFILING
     strlcat(features, "PROFILING ", sizeof(features));
 #endif
@@ -756,9 +763,7 @@ static void PrintBuildInfo(void)
 #ifdef HAVE_MAGIC
     strlcat(features, "MAGIC ", sizeof(features));
 #endif
-#if defined(HAVE_RUST)
     strlcat(features, "RUST ", sizeof(features));
-#endif
     if (strlen(features) == 0) {
         strlcat(features, "none", sizeof(features));
     }
@@ -803,7 +808,7 @@ static void PrintBuildInfo(void)
     } else {
         strlcat(features, "byte(s)", sizeof(features));
     }
-    printf("Atomic intrisics: %s\n", features);
+    printf("Atomic intrinsics: %s\n", features);
 
 #if __WORDSIZE == 64
     bits = "64-bits";
@@ -1050,7 +1055,7 @@ static void SCInstanceInit(SCInstance *suri, const char *progname)
 static TmEcode PrintVersion(void)
 {
 #ifdef REVISION
-    printf("This is %s version %s (rev %s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
+    printf("This is %s version %s (%s)\n", PROG_NAME, PROG_VER, xstr(REVISION));
 #elif defined RELEASE
     printf("This is %s version %s RELEASE\n", PROG_NAME, PROG_VER);
 #else
@@ -1063,7 +1068,7 @@ static TmEcode LogVersion(SCInstance *suri)
 {
     const char *mode = suri->system ? "SYSTEM" : "USER";
 #ifdef REVISION
-    SCLogNotice("This is %s version %s (rev %s) running in %s mode",
+    SCLogNotice("This is %s version %s (%s) running in %s mode",
             PROG_NAME, PROG_VER, xstr(REVISION), mode);
 #elif defined RELEASE
     SCLogNotice("This is %s version %s RELEASE running in %s mode",
@@ -1160,6 +1165,16 @@ static int ParseCommandLinePcapLive(SCInstance *suri, const char *in_arg)
         return TM_ECODE_FAILED;
     }
     return TM_ECODE_OK;
+}
+
+/**
+ * Helper function to check if log directory is writable
+ */
+static bool IsLogDirectoryWritable(const char* str)
+{
+    if (access(str, W_OK) == 0)
+        return true;
+    return false;
 }
 
 static void ParseCommandLineAFL(const char *opt_name, char *opt_arg)
@@ -1367,18 +1382,18 @@ static void ParseCommandLineAFL(const char *opt_name, char *opt_arg)
         SpmTableSetup();
         AppLayerProtoDetectSetup();
         if (strcmp(opt_name, "afl-decoder-ipv4") == 0)
-            exit(DecoderParseDataFromFile(opt_arg, DecodeIPV4));
+            exit(DecoderParseDataFromFile(opt_arg, AFLDecodeIPV4));
         else
-            exit(DecoderParseDataFromFileSerie(opt_arg, DecodeIPV4));
+            exit(DecoderParseDataFromFileSerie(opt_arg, AFLDecodeIPV4));
     } else if(strstr(opt_name, "afl-decoder-ipv6") != NULL) {
         StatsInit();
         MpmTableSetup();
         SpmTableSetup();
         AppLayerProtoDetectSetup();
         if (strcmp(opt_name, "afl-decoder-ipv6") == 0)
-            exit(DecoderParseDataFromFile(opt_arg, DecodeIPV6));
+            exit(DecoderParseDataFromFile(opt_arg, AFLDecodeIPV6));
         else
-            exit(DecoderParseDataFromFileSerie(opt_arg, DecodeIPV6));
+            exit(DecoderParseDataFromFileSerie(opt_arg, AFLDecodeIPV6));
     } else if(strstr(opt_name, "afl-decoder-ethernet") != NULL) {
         StatsInit();
         MpmTableSetup();
@@ -1446,6 +1461,7 @@ static TmEcode ParseCommandLine(int argc, char** argv, SCInstance *suri)
         {"pcap-file-delete", 0, 0, 0},
         {"simulate-ips", 0, 0 , 0},
         {"no-random", 0, &g_disable_randomness, 1},
+        {"strict-rule-keywords", optional_argument, 0, 0},
 
         /* AFL app-layer options. */
         {"afl-http-request", required_argument, 0 , 0},
@@ -1516,6 +1532,7 @@ static TmEcode ParseCommandLine(int argc, char** argv, SCInstance *suri)
         {"dag", required_argument, 0, 0},
         {"napatech", 0, 0, 0},
         {"build-info", 0, &build_info, 1},
+        {"data-dir", required_argument, 0, 0},
 #ifdef WINDIVERT
         {"windivert", required_argument, 0, 0},
         {"windivert-forward", required_argument, 0, 0},
@@ -1848,6 +1865,33 @@ static TmEcode ParseCommandLine(int argc, char** argv, SCInstance *suri)
                     return TM_ECODE_FAILED;
                 }
             }
+            else if (strcmp((long_opts[option_index]).name, "data-dir") == 0) {
+                if (optarg == NULL) {
+                    SCLogError(SC_ERR_INITIALIZATION, "no option argument (optarg) for -d");
+                    return TM_ECODE_FAILED;
+                }
+
+                if (ConfigSetDataDirectory(optarg) != TM_ECODE_OK) {
+                    SCLogError(SC_ERR_FATAL, "Failed to set data directory.");
+                    return TM_ECODE_FAILED;
+                }
+                if (ConfigCheckDataDirectory(optarg) != TM_ECODE_OK) {
+                    SCLogError(SC_ERR_LOGDIR_CMDLINE, "The data directory \"%s\""
+                            " supplied at the commandline (-d %s) doesn't "
+                            "exist. Shutting down the engine.", optarg, optarg);
+                    return TM_ECODE_FAILED;
+                }
+                suri->set_datadir = true;
+            } else if (strcmp((long_opts[option_index]).name , "strict-rule-keywords") == 0){
+                if (optarg == NULL) {
+                    suri->strict_rule_parsing_string = SCStrdup("all");
+                } else {
+                    suri->strict_rule_parsing_string = SCStrdup(optarg);
+                }
+                if (suri->strict_rule_parsing_string == NULL) {
+                    FatalError(SC_ERR_MEM_ALLOC, "failed to duplicate 'strict' string");
+                }
+            }
             break;
         case 'c':
             suri->conf_filename = optarg;
@@ -1918,13 +1962,19 @@ static TmEcode ParseCommandLine(int argc, char** argv, SCInstance *suri)
             }
 
             if (ConfigSetLogDirectory(optarg) != TM_ECODE_OK) {
-                SCLogError(SC_ERR_FATAL, "Failed to set log directory.\n");
+                SCLogError(SC_ERR_FATAL, "Failed to set log directory.");
                 return TM_ECODE_FAILED;
             }
-            if (ConfigCheckLogDirectory(optarg) != TM_ECODE_OK) {
+            if (ConfigCheckLogDirectoryExists(optarg) != TM_ECODE_OK) {
                 SCLogError(SC_ERR_LOGDIR_CMDLINE, "The logging directory \"%s\""
                         " supplied at the commandline (-l %s) doesn't "
                         "exist. Shutting down the engine.", optarg, optarg);
+                return TM_ECODE_FAILED;
+            }
+            if (!IsLogDirectoryWritable(optarg)) {
+                SCLogError(SC_ERR_LOGDIR_CMDLINE, "The logging directory \"%s\""
+                        " supplied at the commandline (-l %s) is not "
+                        "writable. Shutting down the engine.", optarg, optarg);
                 return TM_ECODE_FAILED;
             }
             suri->set_logdir = true;
@@ -2102,7 +2152,7 @@ static TmEcode ParseCommandLine(int argc, char** argv, SCInstance *suri)
         suri->run_mode = RUNMODE_ENGINE_ANALYSIS;
 
     suri->offline = IsRunModeOffline(suri->run_mode);
-    suri->system = IsRunModeSystem(suri->run_mode);
+    g_system = suri->system = IsRunModeSystem(suri->run_mode);
 
     ret = SetBpfString(optind, argv);
     if (ret != TM_ECODE_OK)
@@ -2247,6 +2297,7 @@ void PreRunInit(const int runmode)
     SCProfilingSghsGlobalInit();
     SCProfilingInit();
 #endif /* PROFILING */
+    DatasetsInit();
     DefragInit();
     FlowInitConfig(FLOW_QUIET);
     IPPairInitConfig(FLOW_QUIET);
@@ -2525,8 +2576,7 @@ static void PostRunStartedDetectSetup(const SCInstance *suri)
     /* registering signal handlers we use. We setup usr2 here, so that one
      * can't call it during the first sig load phase or while threads are still
      * starting up. */
-    if (DetectEngineEnabled() && suri->sig_file == NULL &&
-            suri->delayed_detect == 0) {
+    if (DetectEngineEnabled() && suri->delayed_detect == 0) {
         UtilSignalHandlerSetup(SIGUSR2, SignalHandlerSigusr2);
         UtilSignalUnblock(SIGUSR2);
     }
@@ -2650,6 +2700,12 @@ static void SetupUserMode(SCInstance *suri)
                 FatalError(SC_ERR_LOGDIR_CONFIG, "could not set USER mode logdir");
             }
         }
+        if (suri->set_datadir == false) {
+            /* override data dir to current work dir" */
+            if (ConfigSetDataDirectory((char *)".") != TM_ECODE_OK) {
+                FatalError(SC_ERR_LOGDIR_CONFIG, "could not set USER mode datadir");
+            }
+        }
     }
 }
 
@@ -2721,16 +2777,6 @@ static int PostConfLoadedSetup(SCInstance *suri)
         }
     }
 
-    /* Check for the existance of the default logging directory which we pick
-     * from suricata.yaml.  If not found, shut the engine down */
-    suri->log_dir = ConfigGetLogDirectory();
-
-    if (ConfigCheckLogDirectory(suri->log_dir) != TM_ECODE_OK) {
-        SCLogError(SC_ERR_LOGDIR_CONFIG, "The logging directory \"%s\" "
-                "supplied by %s (default-log-dir) doesn't exist. "
-                "Shutting down the engine", suri->log_dir, suri->conf_filename);
-        SCReturnInt(TM_ECODE_FAILED);
-    }
 
     if (ConfigGetCaptureValue(suri) != TM_ECODE_OK) {
         SCReturnInt(TM_ECODE_FAILED);
@@ -2757,6 +2803,7 @@ static int PostConfLoadedSetup(SCInstance *suri)
 
     /* hardcoded initialization code */
     SigTableSetup(); /* load the rule keywords */
+    SigTableApplyStrictCommandlineOption(suri->strict_rule_parsing_string);
     TmqhSetup();
 
     CIDRInit();
@@ -2794,6 +2841,23 @@ static int PostConfLoadedSetup(SCInstance *suri)
 
     if (InitSignalHandler(suri) != TM_ECODE_OK)
         SCReturnInt(TM_ECODE_FAILED);
+
+    /* Check for the existance of the default logging directory which we pick
+     * from suricata.yaml.  If not found, shut the engine down */
+    suri->log_dir = ConfigGetLogDirectory();
+
+    if (ConfigCheckLogDirectoryExists(suri->log_dir) != TM_ECODE_OK) {
+        SCLogError(SC_ERR_LOGDIR_CONFIG, "The logging directory \"%s\" "
+                "supplied by %s (default-log-dir) doesn't exist. "
+                "Shutting down the engine", suri->log_dir, suri->conf_filename);
+        SCReturnInt(TM_ECODE_FAILED);
+    }
+    if (!IsLogDirectoryWritable(suri->log_dir)) {
+        SCLogError(SC_ERR_LOGDIR_CONFIG, "The logging directory \"%s\" "
+                "supplied by %s (default-log-dir) is not writable. "
+                "Shutting down the engine", suri->log_dir, suri->conf_filename);
+        SCReturnInt(TM_ECODE_FAILED);
+    }
 
 
 #ifdef HAVE_NSS
@@ -2856,28 +2920,16 @@ static void SuricataMainLoop(SCInstance *suri)
         }
 
         if (sigusr2_count > 0) {
-            if (suri->sig_file != NULL) {
-                SCLogWarning(SC_ERR_LIVE_RULE_SWAP, "Live rule reload not "
-                        "possible if -s or -S option used at runtime.");
+            if (!(DetectEngineReloadIsStart())) {
+                DetectEngineReloadStart();
+                DetectEngineReload(suri);
+                DetectEngineReloadSetIdle();
                 sigusr2_count--;
-            } else {
-                if (!(DetectEngineReloadIsStart())) {
-                    DetectEngineReloadStart();
-                    DetectEngineReload(suri);
-                    DetectEngineReloadSetIdle();
-                    sigusr2_count--;
-                }
             }
 
         } else if (DetectEngineReloadIsStart()) {
-            if (suri->sig_file != NULL) {
-                SCLogWarning(SC_ERR_LIVE_RULE_SWAP, "Live rule reload not "
-                        "possible if -s or -S option used at runtime.");
-                DetectEngineReloadSetIdle();
-            } else {
-                DetectEngineReload(suri);
-                DetectEngineReloadSetIdle();
-            }
+            DetectEngineReload(suri);
+            DetectEngineReloadSetIdle();
         }
 
         usleep(10* 1000);
@@ -2888,7 +2940,6 @@ int main(int argc, char **argv)
 {
     SCInstanceInit(&suricata, argv[0]);
 
-#ifdef HAVE_RUST
     SuricataContext context;
     context.SCLogMessage = SCLogMessage;
     context.DetectEngineStateFree = DetectEngineStateFree;
@@ -2905,7 +2956,6 @@ int main(int argc, char **argv)
     context.FileSetTx = FileContainerSetTx;
 
     rs_init(&context);
-#endif
 
     SC_ATOMIC_INIT(engine_stage);
 
@@ -2967,6 +3017,13 @@ int main(int argc, char **argv)
         exit(EXIT_SUCCESS);
     }
 
+    int vlan_tracking = 1;
+    if (ConfGetBool("vlan.use-for-tracking", &vlan_tracking) == 1 && !vlan_tracking) {
+        /* Ignore vlan_ids when comparing flows. */
+        g_vlan_mask = 0x0000;
+    }
+    SCLogDebug("vlan tracking is %s", vlan_tracking == 1 ? "enabled" : "disabled");
+
     SetupUserMode(&suricata);
 
     /* Since our config is now loaded we can finish configurating the
@@ -2985,6 +3042,10 @@ int main(int argc, char **argv)
     }
 
     SCDropMainThreadCaps(suricata.userid, suricata.groupid);
+
+    /* Re-enable coredumps after privileges are dropped. */
+    CoredumpEnable();
+
     PreRunPostPrivsDropInit(suricata.run_mode);
 
     PostConfLoadedDetectSetup(&suricata);
