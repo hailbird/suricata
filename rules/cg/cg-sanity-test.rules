@@ -1,0 +1,1 @@
+alert http any any -> any any (msg:"cg-sanity-test"; content:"cg-sanity-test-magic-f35d09ce4af385ef23e2aa7ca263f203"; http_user_agent; classtype:web-application-attack; sid:1000001;)

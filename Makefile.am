@@ -17,7 +17,7 @@ install-data-am:
 install-full:
 	$(MAKE) install
 	$(MAKE) install-conf
-	$(MAKE) install-rules
+	$(MAKE) install-cg-rules
 
 install-conf:
 	install -d "$(DESTDIR)$(e_sysconfdir)"
@@ -29,6 +29,15 @@ install-conf:
 	install -d "$(DESTDIR)$(e_logcertsdir)"
 	install -d "$(DESTDIR)$(e_rundir)"
 	install -m 770 -d "$(DESTDIR)$(e_localstatedir)"
+
+install-cg-rules:
+	install -d "$(DESTDIR)$(e_sysconfrulesdir)"
+	install -d "$(DESTDIR)$(e_sysconfrulesdir)/cg"
+	@test -e "$(DESTDIR)$(e_sysconfrulesdir)/cg/cg-sanity-test.rules" || install -m 600 "$(top_srcdir)/rules/cg/cg-sanity-test.rules" "$(DESTDIR)$(e_sysconfrulesdir)/cg"
+	@test -e "$(DESTDIR)$(e_sysconfrulesdir)/cg/cobaltstrike.rules" || install -m 600 "$(top_srcdir)/rules/cg/cobaltstrike.rules" "$(DESTDIR)$(e_sysconfrulesdir)/cg"
+	@test -e "$(DESTDIR)$(e_sysconfrulesdir)/cg/ll-et-suricata-4-set-exploit-server.rules" || install -m 600 "$(top_srcdir)/rules/cg/ll-et-suricata-4-set-exploit-server.rules" "$(DESTDIR)$(e_sysconfrulesdir)/cg"
+	@test -e "$(DESTDIR)$(e_sysconfrulesdir)/cg/ll-et-suricata-4-set-trojan-block.rules" || install -m 600 "$(top_srcdir)/rules/cg/ll-et-suricata-4-set-trojan-block.rules" "$(DESTDIR)$(e_sysconfrulesdir)/cg"
+	@test -e "$(DESTDIR)$(e_sysconfrulesdir)/cg/ll-et-suricata-4-set-web_server-server.rules" || install -m 600 "$(top_srcdir)/rules/cg/ll-et-suricata-4-set-web_server-server.rules" "$(DESTDIR)$(e_sysconfrulesdir)/cg"
 
 install-rules:
 if HAVE_SURICATA_UPDATE
